@@ -1,5 +1,5 @@
 import time, os, sys, shutil
-
+import tensorflow as tf
 # Progress bar
 
 TOTAL_BAR_LENGTH = 100.
@@ -96,4 +96,31 @@ def write_word(pred_list, save_dir, name):
     ss = open(save_dir + name, "w+")
     for item in pred_list:
         ss.write(" ".join(item) + '\n')
-            
+
+def save_ckpt(sess, saver, save_dir, k):
+    ckpt_path = os.path.join(save_dir, 'models/ckpts/ep%d'%k)
+    save_path = saver.save(sess, ckpt_path)
+    print "TF checkpoint saved in path: %s" % save_path
+    
+def save_model(model, save_dir, cnt):
+    new_dir = save_dir + 'models' + '/' 
+    if not os.path.exists(new_dir):
+        os.mkdir(new_dir)
+    nnew_dir = new_dir + str(cnt) + '/'
+    if not os.path.exists(nnew_dir):
+        os.mkdir(nnew_dir)
+    model.save(nnew_dir)
+    return nnew_dir
+
+def write_log(s, log_file):
+    print s
+    with open(log_file, 'a') as f:
+        f.write(s+'\n')
+
+def merge_two_dicts(x, y):
+    z = x.copy()   # start with x's keys and values
+    z.update(y)    # modifies z with y's keys and values & returns None
+    return z
+
+def tf_summary_entry(tag, value):
+    return tf.Summary(value=[tf.Summary.Value(tag=tag, simple_value=value), ])

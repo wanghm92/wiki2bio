@@ -16,10 +16,12 @@ class fgateLstmUnit(object):
         self.params = {}
 
         with tf.variable_scope(scope_name):
-            self.W = tf.get_variable('W', [self.input_size+self.hidden_size, 4*self.hidden_size])
-            self.b = tf.get_variable('b', [4*self.hidden_size], initializer=tf.zeros_initializer(), dtype=tf.float32)
+            self.W  = tf.get_variable('W', [self.input_size+self.hidden_size,4*self.hidden_size])
+            self.b  = tf.get_variable('b', [4*self.hidden_size], 
+                                      initializer=tf.zeros_initializer(), dtype=tf.float32)
             self.W1 = tf.get_variable('W1', [self.field_size, 2*self.hidden_size])
-            self.b1 = tf.get_variable('b1', [2*hidden_size], initializer=tf.zeros_initializer(), dtype=tf.float32)
+            self.b1 = tf.get_variable('b1', [2*hidden_size], 
+                                      initializer=tf.zeros_initializer(), dtype=tf.float32)
         self.params.update({'W':self.W, 'b':self.b, 'W1':self.W1, 'b1':self.b1})
 
     def __call__(self, x, fd, s, finished = None):
@@ -44,8 +46,7 @@ class fgateLstmUnit(object):
             out = tf.where(finished, tf.zeros_like(h), h)
             state = (tf.where(finished, h_prev, h), tf.where(finished, c_prev, c))
             # out = tf.multiply(1 - finished, h)
-            # state = (tf.multiply(1 - finished, h) + tf.multiply(finished, h_prev),
-            #          tf.multiply(1 - finished, c) + tf.multiply(finished, c_prev))
+            # state = (tf.multiply(1 - finished, h) + tf.multiply(finished, h_prev), tf.multiply(1 - finished, c) + tf.multiply(finished, c_prev))
 
         return out, state
 
