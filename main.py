@@ -33,11 +33,12 @@ tf.app.flags.DEFINE_integer("report", 5000, 'report valid results after some ste
 tf.app.flags.DEFINE_integer("max_to_keep", 5, 'maximum number of checkpoints to save')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003, 'learning rate')
 
+tf.app.flags.DEFINE_boolean("load", True, 'whether to load model parameters')
+tf.app.flags.DEFINE_integer("cnt", 0, 'directory k to load model from')
+tf.app.flags.DEFINE_integer("limits", 0, 'max data set size')
 tf.app.flags.DEFINE_string("mode", 'train', 'train or test')
 tf.app.flags.DEFINE_string("prefix", 'temp', 'name your model')
-tf.app.flags.DEFINE_string("load", '0', 'load directory')
 tf.app.flags.DEFINE_string("dir", prepro_out, 'data set directory')
-tf.app.flags.DEFINE_integer("limits", 0, 'max data set size')
 
 tf.app.flags.DEFINE_boolean("dual_attention",True,'dual attention layer or normal attention')
 tf.app.flags.DEFINE_boolean("fgate_encoder", True,'add field gate in encoder lstm')
@@ -49,31 +50,35 @@ tf.app.flags.DEFINE_boolean("decoder_pos",True,'position info in dual attention 
 
 FLAGS = tf.app.flags.FLAGS
 
-# test phase
-if FLAGS.load != "0":
-	save_dir = 'results/res/' + FLAGS.load + '/'
-	save_file_dir = save_dir + 'src/'
-	pred_dir = 'results/evaluation/' + FLAGS.load + '/'
-	if not os.path.exists(pred_dir):
-		os.mkdir(pred_dir)
-	if not os.path.exists(save_file_dir):
-		os.mkdir(save_file_dir)
-	pred_path = pred_dir + 'pred_summary_'
-	pred_beam_path = pred_dir + 'beam_summary_'
-# train phase
-else:
-	prefix = FLAGS.prefix
-	save_dir = 'results/res/' + prefix + '/'
-	save_file_dir = save_dir + 'src/'
-	pred_dir = 'results/evaluation/' + prefix + '/'
-	if not os.path.exists(save_dir):
-		os.mkdir(save_dir)
-	if not os.path.exists(pred_dir):
-		os.mkdir(pred_dir)
-	if not os.path.exists(save_file_dir):
-		os.mkdir(save_file_dir)
-	pred_path = pred_dir + 'pred_summary_'
-	pred_beam_path = pred_dir + 'beam_summary_'
+# # test phase
+# if FLAGS.load != "0":
+# 	cnt = FLAGS.cnt
+# 	save_dir = 'results/res/' + FLAGS.load + '/'
+# 	load_dir = save_dir + '%s/'%cnt
+# 	save_file_dir = save_dir + 'src/'
+# 	pred_dir = 'results/evaluation/' + FLAGS.load + '/'
+# 	if not os.path.exists(pred_dir):
+# 		os.mkdir(pred_dir)
+# 	if not os.path.exists(save_file_dir):
+# 		os.mkdir(save_file_dir)
+# 	pred_path = pred_dir + 'pred_summary_'
+# 	pred_beam_path = pred_dir + 'beam_summary_'
+# # train phase
+# else:
+
+prefix = FLAGS.prefix
+save_dir = 'results/res/' + prefix + '/'
+load_dir = save_dir + 'models/%s/'%FLAGS.cnt
+save_file_dir = save_dir + 'src/'
+pred_dir = 'results/evaluation/' + prefix + '/'
+if not os.path.exists(save_dir):
+	os.mkdir(save_dir)
+if not os.path.exists(pred_dir):
+	os.mkdir(pred_dir)
+if not os.path.exists(save_file_dir):
+	os.mkdir(save_file_dir)
+pred_path = pred_dir + 'pred_summary_'
+pred_beam_path = pred_dir + 'beam_summary_'
 
 log_file   = save_dir + 'log'
 flag_file  = save_dir + 'flags'
@@ -109,10 +114,17 @@ def train(sess, dataloader, model, saver):
 		write_log(f + " = " + v, log_file)
 	write_log("#######################################################", log_file)
 	
-	k = 0
 	loss, start_time = 0.0, time.time()
 	trainset = dataloader.train_set
-	best_bleu = dict([(i, ('ep0', 0, 0)) for i in range(FLAGS.max_to_keep)])
+	if FLAGS.load:
+		cnt = FLAGS.cnt
+		k = cnt*FLAGS.report + 1
+		best_bleu = load_rankings(rank_file)
+		print 'Rankings loaded from %s'%rank_file
+		print 'k = %d'%k
+	else:
+		k = 0
+		best_bleu = dict([(i, ('ep0', 0, 0)) for i in range(FLAGS.max_to_keep)])
 
 	for e in range(FLAGS.epoch):
 		L.info('Training Epoch --%2d--\n'%e)
@@ -249,8 +261,9 @@ def main():
 		sess.run(tf.global_variables_initializer())
 		saver = tf.train.Saver(max_to_keep=1000)
 		
-		if FLAGS.load != '0':
-			model.load(save_dir)
+		if FLAGS.load:
+			model.load(load_dir)
+			L.info('Model loaded from %s'%load_dir)
 		if FLAGS.mode == 'train':
 			train(sess, dataloader, model, saver)
 		else:

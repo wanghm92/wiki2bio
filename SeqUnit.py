@@ -19,8 +19,10 @@ class SeqUnit(object):
 			size of batch; hidden layer; word/field/position embedding
 		source_vocab, target_vocab, field_vocab, position_vocab: 
 			vocabulary size of encoder words; decoder words; field types; position
-		field_concat, position_concat: 
-			bool values, whether concat field/position embedding to word embedding for encoder inputs or not
+		field_concat
+			bool values, whether concat field embedding to word embedding for encoder inputs
+		position_concat: 
+			bool values, whether concat position embedding to word embedding and field embedding for encoder inputs
 		fgate_enc, dual_att: 
 			bool values, whether use field-gating / dual attention or not
 		encoder_add_pos, decoder_add_pos: 

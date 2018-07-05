@@ -1,4 +1,4 @@
-import time, os, sys, shutil
+import time, os, sys, shutil, json
 import tensorflow as tf
 # Progress bar
 
@@ -124,3 +124,10 @@ def merge_two_dicts(x, y):
 
 def tf_summary_entry(tag, value):
     return tf.Summary(value=[tf.Summary.Value(tag=tag, simple_value=value), ])
+
+def load_rankings(file):
+    fin = open(file, 'r')
+    rankings = json.load(fin)
+    rankings = {int(k):v for k,v in rankings.items()}
+    fin.close()
+    return rankings
