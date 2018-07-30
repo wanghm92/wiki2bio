@@ -78,7 +78,7 @@ class SeqUnit(object):
 				print 'normal encoder LSTM'
 				self.enc_lstm = LstmUnit(self.hidden_size, self.uni_size, 'encoder_lstm')
 			self.dec_lstm = LstmUnit(self.hidden_size, self.emb_size, 'decoder_lstm')
-			self.dec_out = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output')
+			self.dec_out  = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output')
 
 		self.units.update({'encoder_lstm': self.enc_lstm,'decoder_lstm': self.dec_lstm,
 						   'decoder_output': self.dec_out})
@@ -95,7 +95,7 @@ class SeqUnit(object):
 
 				if self.field_concat or self.fgate_enc or \
 				   self.encoder_add_pos or self.decoder_add_pos:
-					self.fembedding = tf.get_variable('fembedding', 
+					self.fembedding  = tf.get_variable('fembedding', 
 													  [self.field_vocab, self.field_size])
 					self.field_embed = tf.nn.embedding_lookup(self.fembedding, 
 															  self.encoder_field)
@@ -109,13 +109,13 @@ class SeqUnit(object):
 													  [self.position_vocab, self.pos_size])
 					self.rembedding = tf.get_variable('rembedding', 
 													  [self.position_vocab, self.pos_size])
-					self.pos_embed = tf.nn.embedding_lookup(self.pembedding,self.encoder_pos)
+					self.pos_embed  = tf.nn.embedding_lookup(self.pembedding,self.encoder_pos)
 					self.rpos_embed = tf.nn.embedding_lookup(self.rembedding,
 															 self.encoder_rpos)
 					if position_concat:
-						self.encoder_embed = tf.concat([self.encoder_embed, 
-														self.pos_embed, 
-														self.rpos_embed], 2)
+						self.encoder_embed   = tf.concat([self.encoder_embed, 
+														  self.pos_embed, 
+														  self.rpos_embed], 2)
 						self.field_pos_embed = tf.concat([self.field_embed, 
 														  self.pos_embed, 
 														  self.rpos_embed], 2)
@@ -212,7 +212,9 @@ class SeqUnit(object):
 			emit_ta = emit_ta.write(t, o_t)
 			finished = tf.greater_equal(t+1, inputs_len)
 			'''
-				Return true_fn() if the predicate pred is true else false_fn()
+				tf.cond: Return true_fn() if the predicate pred is true else false_fn()
+				tf.reduce_all: "logical and" 
+				tf.greater_equal: (x >= y) element-wise
 			'''
 			x_nt = tf.cond(tf.reduce_all(finished), 
 						   lambda: tf.zeros([batch_size, self.uni_size], dtype=tf.float32), 

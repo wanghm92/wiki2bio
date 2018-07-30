@@ -43,17 +43,17 @@ class dualAttentionWrapper(object):
     def __call__(self, x, coverage = None, finished = None):
         gamma_h = tf.tanh(tf.nn.xw_plus_b(x, self.Ws, self.bs))  # batch * hidden_size
         alpha_h = tf.tanh(tf.nn.xw_plus_b(x, self.Wr, self.br))
-        fd_weights = tf.reduce_sum(self.phi_fds * alpha_h, reduction_indices=2, keepdims=True)
-        fd_weights = tf.exp(fd_weights - tf.reduce_max(fd_weights, reduction_indices=0, keepdims=True))
-        fd_weights = tf.divide(fd_weights, (1e-6 + tf.reduce_sum(fd_weights, reduction_indices=0, keepdims=True)))
+        fd_weights = tf.reduce_sum(self.phi_fds * alpha_h, axis=2, keepdims=True)
+        fd_weights = tf.exp(fd_weights - tf.reduce_max(fd_weights, axis=0, keepdims=True))
+        fd_weights = tf.divide(fd_weights, (1e-6 + tf.reduce_sum(fd_weights, axis=0, keepdims=True)))
         
         
-        weights = tf.reduce_sum(self.phi_hs * gamma_h, reduction_indices=2, keepdims=True)  # input_len * batch
-        weights = tf.exp(weights - tf.reduce_max(weights, reduction_indices=0, keepdims=True))
-        weights = tf.divide(weights, (1e-6 + tf.reduce_sum(weights, reduction_indices=0, keepdims=True)))
-        weights = tf.divide(weights * fd_weights, (1e-6 + tf.reduce_sum(weights * fd_weights, reduction_indices=0, keepdims=True)))
+        weights = tf.reduce_sum(self.phi_hs * gamma_h, axis=2, keepdims=True)  # input_len * batch
+        weights = tf.exp(weights - tf.reduce_max(weights, axis=0, keepdims=True))
+        weights = tf.divide(weights, (1e-6 + tf.reduce_sum(weights, axis=0, keepdims=True)))
+        weights = tf.divide(weights * fd_weights, (1e-6 + tf.reduce_sum(weights * fd_weights, axis=0, keepdims=True)))
         
-        context = tf.reduce_sum(self.hs * weights, reduction_indices=0)  # batch * input_size
+        context = tf.reduce_sum(self.hs * weights, axis=0)  # batch * input_size
         out = tf.tanh(tf.nn.xw_plus_b(tf.concat([context, x], -1), self.Wo, self.bo))
 
         if finished is not None:

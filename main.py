@@ -15,9 +15,10 @@ from util import *
 
 last_best = 0.0
 file_paths = {}
-prepro_out = 'processed_data'
-gold_path_test = '%s/test/test_split_for_rouge/gold_summary_'%prepro_out
-gold_path_valid = '%s/valid/valid_split_for_rouge/gold_summary_'%prepro_out
+
+suffix='data'
+prepro_in = 'original_%s'%suffix
+prepro_out = 'processed_%s'%suffix
 
 tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
 tf.app.flags.DEFINE_integer("emb_size", 400, "Size of embedding.")
@@ -33,7 +34,8 @@ tf.app.flags.DEFINE_integer("report", 5000, 'report valid results after some ste
 tf.app.flags.DEFINE_integer("max_to_keep", 5, 'maximum number of checkpoints to save')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003, 'learning rate')
 
-tf.app.flags.DEFINE_boolean("load", True, 'whether to load model parameters')
+tf.app.flags.DEFINE_boolean("load", False, 'whether to load model parameters')
+tf.app.flags.DEFINE_boolean("rouge", False, 'whether to evaluate on ROUGE for validation')
 tf.app.flags.DEFINE_integer("cnt", 0, 'directory k to load model from')
 tf.app.flags.DEFINE_integer("limits", 0, 'max data set size')
 tf.app.flags.DEFINE_string("mode", 'train', 'train or test')
@@ -50,22 +52,6 @@ tf.app.flags.DEFINE_boolean("decoder_pos",True,'position info in dual attention 
 
 FLAGS = tf.app.flags.FLAGS
 
-# # test phase
-# if FLAGS.load != "0":
-# 	cnt = FLAGS.cnt
-# 	save_dir = 'results/res/' + FLAGS.load + '/'
-# 	load_dir = save_dir + '%s/'%cnt
-# 	save_file_dir = save_dir + 'src/'
-# 	pred_dir = 'results/evaluation/' + FLAGS.load + '/'
-# 	if not os.path.exists(pred_dir):
-# 		os.mkdir(pred_dir)
-# 	if not os.path.exists(save_file_dir):
-# 		os.mkdir(save_file_dir)
-# 	pred_path = pred_dir + 'pred_summary_'
-# 	pred_beam_path = pred_dir + 'beam_summary_'
-# # train phase
-# else:
-
 prefix = FLAGS.prefix
 save_dir = 'results/res/' + prefix + '/'
 load_dir = save_dir + 'models/%s/'%FLAGS.cnt
@@ -79,6 +65,13 @@ if not os.path.exists(save_file_dir):
 	os.mkdir(save_file_dir)
 pred_path = pred_dir + 'pred_summary_'
 pred_beam_path = pred_dir + 'beam_summary_'
+
+if FLAGS.rouge:
+	gold_path_test = '%s/test/test_split_for_rouge/gold_summary_'%prepro_out
+	gold_path_valid = '%s/valid/valid_split_for_rouge/gold_summary_'%prepro_out
+else:
+	gold_path_test = '%s/test.summary'%prepro_in
+	gold_path_valid = '%s/valid.summary'%prepro_in
 
 log_file   = save_dir + 'log'
 flag_file  = save_dir + 'flags'
@@ -154,13 +147,85 @@ def train(sess, dataloader, model, saver):
 							with open(rank_file, 'w+') as fout:
 								json.dump(best_bleu, fout, sort_keys=True, indent=4)
 							break
-					
-def test(sess, dataloader, model, saver):
-	#TODO: load model from checkpoint
-	evaluate(sess, dataloader, model, save_dir, 'test')
 
-def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
-	L.info('Beginning evaluate in %s mode ...'%mode)
+def evaluate(*args):
+	return evaluate_both(*args) if FLAGS.rouge else evaluate_bleu(*args)
+
+def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid'):
+	L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
+	if mode == 'valid':
+		texts_path = valid_path
+		gold_path = gold_path_valid
+		evalset = dataloader.dev_set
+	else:
+		texts_path = test_path
+		gold_path = gold_path_test
+		evalset = dataloader.test_set
+	
+	# for copy words from the infoboxes
+	texts = open(texts_path, 'r').read().strip().split('\n')
+	texts = [list(t.strip().split()) for t in texts]
+	v = Vocab()
+
+	# with copy
+	pred_list, pred_list_copy, gold_list = [], [], []
+	pred_unk, pred_mask = [], []
+	
+	k = 0 # instance counter
+	b = 0 # batch counter
+	# loss = 0.0
+	data_size = len(evalset[0])
+	num_batches = int(data_size / FLAGS.batch_size) if data_size % FLAGS.batch_size == 0 \
+												    else int(data_size / FLAGS.batch_size) + 1
+	L.info('Evaluating by batches ...')
+	for x in dataloader.batch_iter(evalset, FLAGS.batch_size, False):
+		predictions, atts = model.generate(x, sess)
+		# loss += l
+		atts = np.squeeze(atts)
+		idx = 0 #idx within a batch
+		b += 1
+		for summary in np.array(predictions):
+			with open(pred_path + str(k), 'w') as sw:
+				summary = list(summary)
+				if 2 in summary:
+					summary = summary[:summary.index(2)] if summary[0] != 2 else [2]
+				real_sum, unk_sum, mask_sum = [], [], []
+				for tk, tid in enumerate(summary):
+					if tid == 3:
+						sub = texts[k][np.argmax(atts[tk, :len(texts[k]), idx])]
+						real_sum.append(sub)
+						mask_sum.append("**" + str(sub) + "**")
+					else:
+						real_sum.append(v.id2word(tid))
+						mask_sum.append(v.id2word(tid))
+					unk_sum.append(v.id2word(tid))
+				sw.write(" ".join([str(x) for x in real_sum]) + '\n')
+				pred_list.append([str(x) for x in real_sum])
+				pred_mask.append([str(x) for x in mask_sum])
+				pred_unk.append([str(x) for x in unk_sum])
+				k += 1
+				idx += 1
+		progress_bar(b, num_batches)
+	write_word(pred_mask, ksave_dir, mode + "_summary_copy.txt")
+	write_word(pred_unk, ksave_dir, mode + "_summary_unk.txt")
+	# loss = loss/(data_size*1.0)
+
+	with open(gold_path, 'r') as fin:
+		gold_list = [x.strip().split() for x in fin.readlines()]
+	
+	L.info('Calculating BLEU with copy ...')
+	bleu_copy = corpus_bleu(gold_list, pred_list)
+	copy_result = "with copy BLEU: %.4f\n" %bleu_copy
+
+	L.info('Calculating BLEU without copy ...')
+	bleu_unk = corpus_bleu(gold_list, pred_unk)
+	nocopy_result = "without copy BLEU: %.4f\n"%bleu_unk
+	result 	= copy_result + nocopy_result 
+
+	return result, bleu_unk, bleu_copy
+
+def evaluate_both(sess, dataloader, model, ksave_dir, mode='valid'):
+	L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
 	if mode == 'valid':
 		texts_path = valid_path
 		gold_path = gold_path_valid
@@ -187,7 +252,7 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
 		predictions, atts = model.generate(x, sess)
 		# loss += l
 		atts = np.squeeze(atts)
-		idx = 0
+		idx = 0 #batch_idx
 		for summary in np.array(predictions):
 			with open(pred_path + str(k), 'w') as sw:
 				summary = list(summary)
@@ -196,7 +261,7 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
 				real_sum, unk_sum, mask_sum = [], [], []
 				for tk, tid in enumerate(summary):
 					if tid == 3:
-						sub = texts[k][np.argmax(atts[tk,: len(texts[k]),idx])]
+						sub = texts[k][np.argmax(atts[tk, :len(texts[k]), idx])]
 						real_sum.append(sub)
 						mask_sum.append("**" + str(sub) + "**")
 					else:
@@ -232,15 +297,21 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
 		with open(pred_path + str(tk), 'w') as sw:
 			sw.write(" ".join(pred_unk[tk]) + '\n')
 
-	L.info('Calculating ROUGE with copy ...')
+	L.info('Calculating ROUGE without copy ...')
 	recall, precision, F_measure = PythonROUGE(pred_set, gold_set, ngram_order=4)
-	L.info('Calculating BLEU with copy ...')
+	L.info('Calculating BLEU without copy ...')
 	bleu_unk = corpus_bleu(gold_list, pred_unk)
 	nocopy_result = "without copy F_measure: %s Recall: %s Precision: %s BLEU: %s\n" % \
 					(str(F_measure), str(recall), str(precision), str(bleu_unk))
 	result 	= copy_result + nocopy_result 
 
 	return result, bleu_unk, bleu_copy
+
+					
+def test(sess, dataloader, model, saver):
+	#TODO: load model from checkpoint
+	result, _, _ = evaluate(sess, dataloader, model, save_dir, 'test')
+	print result
 
 def main():
 	config = tf.ConfigProto(allow_soft_placement=True)

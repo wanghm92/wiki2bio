@@ -33,6 +33,14 @@ class LstmUnit(object):
 
         out, state = h, (h, c)
         if finished is not None:
+            '''
+                tf.where(condition, x=None, y=None, name=None)
+                Return the elements, either from x or y, depending on the condition.
+                
+                The condition tensor acts as a mask that chooses, based on the value at each element, whether the corresponding element / row in the output should be taken from x (if true) or y (if false).
+                
+                If condition is a vector and x and y are higher rank matrices, then it chooses which row (outer dimension) to copy from x and y. If condition has the same shape as x and y, then it chooses which element to copy from x and y.
+            '''
             out = tf.where(finished, tf.zeros_like(h), h)
             state = (tf.where(finished, h_prev, h), tf.where(finished, c_prev, c))
             # out = tf.multiply(1 - finished, h)

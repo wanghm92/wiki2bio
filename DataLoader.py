@@ -38,22 +38,21 @@ class DataLoader(object):
 	def load_data(self, path):
 		summary_path, text_path, field_path, pos_path, rpos_path = path
 		summaries = open(summary_path, 'r').read().strip().split('\n')
-		texts 	  = open(text_path, 'r').read().strip().split('\n')
-		fields 	  = open(field_path, 'r').read().strip().split('\n')
-		poses 	  = open(pos_path, 'r').read().strip().split('\n')
-		rposes 	  = open(rpos_path, 'r').read().strip().split('\n')
+		texts 	  = open(text_path,    'r').read().strip().split('\n')
+		fields 	  = open(field_path,   'r').read().strip().split('\n')
+		poses 	  = open(pos_path,     'r').read().strip().split('\n')
+		rposes 	  = open(rpos_path,    'r').read().strip().split('\n')
 		if self.limits > 0:
 			summaries = summaries[:self.limits]
 			texts 	  = texts[:self.limits]
 			fields    = fields[:self.limits]
 			poses 	  = poses[:self.limits]
 			rposes 	  = rposes[:self.limits]
-		# print summaries[0].strip().split(' ')
 		summaries = [list(map(int, summary.strip().split(' '))) for summary in summaries]
-		texts 	  = [list(map(int, text.strip().split(' '))) for text in texts]
-		fields 	  = [list(map(int, field.strip().split(' '))) for field in fields]
-		poses 	  = [list(map(int, pos.strip().split(' '))) for pos in poses]
-		rposes 	  = [list(map(int, rpos.strip().split(' '))) for rpos in rposes]
+		texts 	  = [list(map(int, text.strip().split(' ')))    for text in texts]
+		fields 	  = [list(map(int, field.strip().split(' ')))   for field in fields]
+		poses 	  = [list(map(int, pos.strip().split(' ')))     for pos in poses]
+		rposes 	  = [list(map(int, rpos.strip().split(' ')))    for rpos in rposes]
 		return summaries, texts, fields, poses, rposes
 
 	def batch_iter(self, data, batch_size, shuffle):
@@ -62,6 +61,7 @@ class DataLoader(object):
 		num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
 												  else int(data_size / batch_size) + 1
 
+		print 'num_batches = %d'%num_batches
 		if shuffle:
 			shuffle_indices = np.random.permutation(np.arange(data_size))
 			summaries 		= np.array(summaries)[shuffle_indices]

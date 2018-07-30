@@ -31,14 +31,14 @@ class AttentionWrapper(object):
 
     def __call__(self, x, finished = None):
         gamma_h = tf.tanh(tf.nn.xw_plus_b(x, self.Ws, self.bs))
-        weights = tf.reduce_sum(self.phi_hs * gamma_h, reduction_indices=2, keep_dims=True)
-        weight = weights
-        weights = tf.exp(weights - tf.reduce_max(weights, reduction_indices=0, keep_dims=True))
-        weights = tf.divide(weights, (1e-6 + tf.reduce_sum(weights, reduction_indices=0, keep_dims=True)))
-        context = tf.reduce_sum(self.hs * weights, reduction_indices=0)
+        weights = tf.reduce_sum(self.phi_hs * gamma_h, axis=2, keep_dims=True)
+        weights = tf.exp(weights - tf.reduce_max(weights, axis=0, keep_dims=True))
+        weights = tf.divide(weights, (1e-6 + tf.reduce_sum(weights, axis=0, keep_dims=True)))
+        context = tf.reduce_sum(self.hs * weights, axis=0)
         # print wrt.get_shape().as_list()
         out = tf.tanh(tf.nn.xw_plus_b(tf.concat([context, x], -1), self.Wo, self.bo))
 
+        # Applying mask, but why not before exponential ???
         if finished is not None:
             out = tf.where(finished, tf.zeros_like(out), out)
         return out, weights
