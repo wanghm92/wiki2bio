@@ -17,15 +17,15 @@ last_best = 0.0
 file_paths = {}
 
 suffix='data'
-prepro_in = 'original_%s'%suffix
-prepro_out = 'processed_%s'%suffix
+prepro_in = '/home/hongmin/table2text_nlg/data/fieldgate_data/original_%s'%suffix
+prepro_out = '/home/hongmin/table2text_nlg/data/fieldgate_data/processed_%s'%suffix
 
 tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
 tf.app.flags.DEFINE_integer("emb_size", 400, "Size of embedding.")
 tf.app.flags.DEFINE_integer("field_size", 50, "Size of embedding.")
 tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size of train set.")
-tf.app.flags.DEFINE_integer("epoch", 50, "Number of training epoch.")
+tf.app.flags.DEFINE_integer("epoch", 100, "Number of training epoch.")
 tf.app.flags.DEFINE_integer("source_vocab", 20003, 'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 1480, 'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31, 'vocabulary size')
@@ -43,20 +43,21 @@ tf.app.flags.DEFINE_string("prefix", 'temp', 'name your model')
 tf.app.flags.DEFINE_string("dir", prepro_out, 'data set directory')
 
 tf.app.flags.DEFINE_boolean("dual_attention",True,'dual attention layer or normal attention')
-tf.app.flags.DEFINE_boolean("fgate_encoder", True,'add field gate in encoder lstm')
+tf.app.flags.DEFINE_boolean("fgate_encoder", False,'add field gate in encoder lstm')
 
-tf.app.flags.DEFINE_boolean("field", False,'concat field information to word embedding')
-tf.app.flags.DEFINE_boolean("position",False,'concat position information to word embedding')
+tf.app.flags.DEFINE_boolean("field", True,'concat field information to word embedding')
+tf.app.flags.DEFINE_boolean("position",True,'concat position information to word embedding')
 tf.app.flags.DEFINE_boolean("encoder_pos",True,'position info in field-gated encoder')
 tf.app.flags.DEFINE_boolean("decoder_pos",True,'position info in dual attention decoder')
 
 FLAGS = tf.app.flags.FLAGS
 
 prefix = FLAGS.prefix
-save_dir = 'results/res/' + prefix + '/'
+save_dir = '/home/hongmin/table2text_nlg/output/fieldgate_output/results/res/' + prefix + '/'
 load_dir = save_dir + 'models/%s/'%FLAGS.cnt
 save_file_dir = save_dir + 'src/'
-pred_dir = 'results/evaluation/' + prefix + '/'
+ckpt_dir = save_dir + 'ckpt/'
+pred_dir = '/home/hongmin/table2text_nlg/output/fieldgate_output/results/evaluation/' + prefix + '/'
 if not os.path.exists(save_dir):
   os.mkdir(save_dir)
 if not os.path.exists(pred_dir):
@@ -83,16 +84,16 @@ tfwriter = tf.summary.FileWriter(tb_path)
 
 file_paths['gold_path_test']  = gold_path_test
 file_paths['gold_path_valid'] = gold_path_valid
-file_paths['save_dir']		  = save_dir
+file_paths['save_dir']		    = save_dir
 file_paths['save_file_dir']   = save_file_dir
-file_paths['pred_dir'] 		  = pred_dir
-file_paths['pred_path'] 	  = pred_path
+file_paths['pred_dir']		    = pred_dir
+file_paths['pred_path'] 	    = pred_path
 file_paths['pred_beam_path']  = pred_beam_path
-file_paths['log_file'] 		  = log_file
-file_paths['flag_file'] 	  = flag_file
-file_paths['rank_file'] 	  = rank_file
-file_paths['valid_path'] 	  = valid_path
-file_paths['test_path'] 	  = test_path
+file_paths['log_file'] 		    = log_file
+file_paths['flag_file'] 	    = flag_file
+file_paths['rank_file'] 	    = rank_file
+file_paths['valid_path'] 	    = valid_path
+file_paths['test_path'] 	    = test_path
 
 def train(sess, dataloader, model, saver):
   cur_time = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
@@ -143,7 +144,7 @@ def train(sess, dataloader, model, saver):
           for i in range(FLAGS.max_to_keep):
             if b_cpy >= best_bleu[i][1]:
               best_bleu[i] = ('ep%d'%cnt, b_cpy, b_unk)
-              save_ckpt(sess, saver, save_dir, cnt)
+              save_ckpt(sess, saver, ckpt_dir, cnt)
               with open(rank_file, 'w+') as fout:
                 json.dump(best_bleu, fout, sort_keys=True, indent=4)
               break
