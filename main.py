@@ -30,7 +30,7 @@ tf.app.flags.DEFINE_integer("source_vocab", 20003, 'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 1480, 'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31, 'vocabulary size')
 tf.app.flags.DEFINE_integer("target_vocab", 20003, 'vocabulary size')
-tf.app.flags.DEFINE_integer("report", 2000, 'report valid results after some steps')
+tf.app.flags.DEFINE_integer("report", 5000, 'report valid results after some steps')
 tf.app.flags.DEFINE_integer("max_to_keep", 5, 'maximum number of checkpoints to save')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003, 'learning rate')
 
@@ -236,16 +236,6 @@ def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid'):
   bleu_copy = bleu_score(gold_path, ksave_dir + mode + "_summary_copy.clean.txt")
   copy_result = "with copy BLEU: %.4f\n" %bleu_copy
 
-  # with open(gold_path, 'r') as fin:
-  #   gold_list = [x.strip().split() for x in fin.readlines()]
-  #
-  # L.info('Calculating BLEU with copy ...')
-  # bleu_copy = corpus_bleu(gold_list, pred_list)
-  # copy_result = "with copy BLEU: %.4f\n" %bleu_copy
-  #
-  # L.info('Calculating BLEU without copy ...')
-  # bleu_unk = corpus_bleu(gold_list, pred_unk)
-  # nocopy_result = "without copy BLEU: %.4f\n"%bleu_unk
   result 	= copy_result + nocopy_result
 
   return result, bleu_unk, bleu_copy
