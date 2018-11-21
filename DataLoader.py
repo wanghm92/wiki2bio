@@ -30,10 +30,11 @@ class DataLoader(object):
     start_time 		  = time.time()
 
     print('Reading datasets ...')
+    print(data_dir)
     self.train_set = self.load_data(self.train_data_path)
     self.test_set  = self.load_data(self.test_data_path)
     self.dev_set   = self.load_data(self.dev_data_path)
-    print ('Reading datasets comsumes %.3f seconds' % (time.time() - start_time))
+    print ('Reading datasets consumes %.3f seconds' % (time.time() - start_time))
 
   def load_data(self, path):
     summary_path, text_path, field_path, pos_path, rpos_path = path

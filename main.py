@@ -3,7 +3,7 @@
 # @Time    : 17-4-27 下午8:44
 # @Author  : Tianyu Liu
 
-import sys, os, time, logging, json, tqdm
+import sys, os, time, logging, json, tqdm, io, subprocess
 import tensorflow as tf
 import numpy as np
 from SeqUnit import *
@@ -30,7 +30,7 @@ tf.app.flags.DEFINE_integer("source_vocab", 20003, 'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 1480, 'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31, 'vocabulary size')
 tf.app.flags.DEFINE_integer("target_vocab", 20003, 'vocabulary size')
-tf.app.flags.DEFINE_integer("report", 5000, 'report valid results after some steps')
+tf.app.flags.DEFINE_integer("report", 2000, 'report valid results after some steps')
 tf.app.flags.DEFINE_integer("max_to_keep", 5, 'maximum number of checkpoints to save')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003, 'learning rate')
 
@@ -56,7 +56,7 @@ prefix = FLAGS.prefix
 save_dir = '/home/hongmin/table2text_nlg/output/fieldgate_output/results/res/' + prefix + '/'
 load_dir = save_dir + 'models/%s/'%FLAGS.cnt
 save_file_dir = save_dir + 'src/'
-ckpt_dir = save_dir + 'ckpt/'
+# ckpt_dir = save_dir + 'ckpt/'
 pred_dir = '/home/hongmin/table2text_nlg/output/fieldgate_output/results/evaluation/' + prefix + '/'
 if not os.path.exists(save_dir):
   os.mkdir(save_dir)
@@ -144,10 +144,29 @@ def train(sess, dataloader, model, saver):
           for i in range(FLAGS.max_to_keep):
             if b_cpy >= best_bleu[i][1]:
               best_bleu[i] = ('ep%d'%cnt, b_cpy, b_unk)
-              save_ckpt(sess, saver, ckpt_dir, cnt)
+              save_ckpt(sess, saver, save_dir, cnt)
               with open(rank_file, 'w+') as fout:
                 json.dump(best_bleu, fout, sort_keys=True, indent=4)
               break
+
+def bleu_score(labels_file, predictions_path):
+    bleu_script = "/home/hongmin/onmt-tf-whm/third_party/multi-bleu.perl"
+    try:
+      with io.open(predictions_path, encoding="utf-8", mode="r") as predictions_file:
+        bleu_out = subprocess.check_output(
+            [bleu_script, labels_file],
+            stdin=predictions_file,
+            stderr=subprocess.STDOUT)
+        bleu_out = bleu_out.decode("utf-8")
+        bleu_score = re.search(r"BLEU = (.+?),", bleu_out).group(1)
+
+        return float(bleu_score)
+    except subprocess.CalledProcessError as error:
+      if error.output is not None:
+        msg = error.output.strip()
+        tf.logging.warning(
+            "{} script returned non-zero exit code: {}".format(bleu_script, msg))
+      return None
 
 def evaluate(*args):
   return evaluate_both(*args) if FLAGS.rouge else evaluate_bleu(*args)
@@ -208,19 +227,25 @@ def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid'):
         idx += 1
     progress_bar(b, num_batches)
   write_word(pred_mask, ksave_dir, mode + "_summary_copy.txt")
+  write_word(pred_list, ksave_dir, mode + "_summary_copy.clean.txt")
   write_word(pred_unk, ksave_dir, mode + "_summary_unk.txt")
   # loss = loss/(data_size*1.0)
 
-  with open(gold_path, 'r') as fin:
-    gold_list = [x.strip().split() for x in fin.readlines()]
-
-  L.info('Calculating BLEU with copy ...')
-  bleu_copy = corpus_bleu(gold_list, pred_list)
+  bleu_unk = bleu_score(gold_path, ksave_dir + mode + "_summary_unk.txt")
+  nocopy_result = "without copy BLEU: %.4f\n"%bleu_unk
+  bleu_copy = bleu_score(gold_path, ksave_dir + mode + "_summary_copy.clean.txt")
   copy_result = "with copy BLEU: %.4f\n" %bleu_copy
 
-  L.info('Calculating BLEU without copy ...')
-  bleu_unk = corpus_bleu(gold_list, pred_unk)
-  nocopy_result = "without copy BLEU: %.4f\n"%bleu_unk
+  # with open(gold_path, 'r') as fin:
+  #   gold_list = [x.strip().split() for x in fin.readlines()]
+  #
+  # L.info('Calculating BLEU with copy ...')
+  # bleu_copy = corpus_bleu(gold_list, pred_list)
+  # copy_result = "with copy BLEU: %.4f\n" %bleu_copy
+  #
+  # L.info('Calculating BLEU without copy ...')
+  # bleu_unk = corpus_bleu(gold_list, pred_unk)
+  # nocopy_result = "without copy BLEU: %.4f\n"%bleu_unk
   result 	= copy_result + nocopy_result
 
   return result, bleu_unk, bleu_copy

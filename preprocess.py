@@ -1,6 +1,7 @@
 import re, time, os, sys
 
-prepro_in = 'original_small'
+suffix='data'
+prepro_in = '/home/hongmin/table2text_nlg/data/fieldgate_data/original_%s'%suffix
 
 def split_infobox():
   """
