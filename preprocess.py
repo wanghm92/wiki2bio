@@ -1,7 +1,11 @@
+from __future__ import print_function
+
 import re, time, os, sys
 
 suffix='data'
-prepro_in = '/home/hongmin/table2text_nlg/data/fieldgate_data/original_%s'%suffix
+from os.path import expanduser
+HOME = expanduser("~")
+prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 
 def split_infobox():
   """
@@ -136,12 +140,12 @@ def check_generated_box():
       ppos = pos.strip().split(' ')
       rrpos = rpos.strip().split(' ')
       if len(vval) != len(llab) or len(llab) != len(ppos) or len(ppos) != len(rrpos):
-        print case
-        print val
-        print len(vval)
-        print len(llab)
-        print len(ppos)
-        print len(rrpos)
+        print(case)
+        print(val)
+        print(len(vval))
+        print(len(llab))
+        print(len(ppos))
+        print(len(rrpos))
       assert len(vval) == len(llab)
       assert len(llab) == len(ppos)
       assert len(ppos) == len(rrpos)

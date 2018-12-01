@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # @Time    : 17-4-27 下午8:44
 # @Author  : Tianyu Liu
+from __future__ import print_function
 
 import sys, os, time, logging, json, tqdm, io, subprocess
 import tensorflow as tf
@@ -11,14 +12,19 @@ from DataLoader import DataLoader
 from PythonROUGE import PythonROUGE
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 from preprocess import *
-from util import * 
+from util import *
+from os.path import expanduser
+HOME = expanduser("~")
+sys.path.append('{}/bert_src/bert_as_service'.format(HOME))
+from service.client import BertClient
+bc = BertClient()
 
 last_best = 0.0
 file_paths = {}
 
-suffix='data'
-prepro_in = '/home/hongmin/table2text_nlg/data/fieldgate_data/original_%s'%suffix
-prepro_out = '/home/hongmin/table2text_nlg/data/fieldgate_data/processed_%s'%suffix
+suffix='small'
+prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
+prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 
 tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
 tf.app.flags.DEFINE_integer("emb_size", 400, "Size of embedding.")
@@ -35,6 +41,7 @@ tf.app.flags.DEFINE_integer("max_to_keep", 5, 'maximum number of checkpoints to 
 tf.app.flags.DEFINE_float("learning_rate", 0.0003, 'learning rate')
 
 tf.app.flags.DEFINE_boolean("load", False, 'whether to load model parameters')
+tf.app.flags.DEFINE_boolean("rl", False, 'whether to add policy gradient')
 tf.app.flags.DEFINE_boolean("rouge", False, 'whether to evaluate on ROUGE for validation')
 tf.app.flags.DEFINE_integer("cnt", 0, 'directory k to load model from')
 tf.app.flags.DEFINE_integer("limits", 0, 'max data set size')
@@ -53,11 +60,14 @@ tf.app.flags.DEFINE_boolean("decoder_pos",True,'position info in dual attention 
 FLAGS = tf.app.flags.FLAGS
 
 prefix = FLAGS.prefix
-save_dir = '/home/hongmin/table2text_nlg/output/fieldgate_output/results/res/' + prefix + '/'
+save_dir = '%s/table2text_nlg/output/fieldgate_output/results/res/%s/'%(HOME, prefix)
+write_log('save_dir: %s'%save_dir)
 load_dir = save_dir + 'models/%s/'%FLAGS.cnt
 save_file_dir = save_dir + 'src/'
 # ckpt_dir = save_dir + 'ckpt/'
-pred_dir = '/home/hongmin/table2text_nlg/output/fieldgate_output/results/evaluation/' + prefix + '/'
+pred_dir = '%s/table2text_nlg/output/fieldgate_output/results/evaluation/%s/'%(HOME, prefix)
+write_log('pred_dir: %s'%pred_dir)
+
 if not os.path.exists(save_dir):
   os.mkdir(save_dir)
 if not os.path.exists(pred_dir):
@@ -79,6 +89,7 @@ flag_file  = save_dir + 'flags'
 rank_file  = save_dir + 'ranking'
 valid_path = "%s/valid/valid.box.val"%prepro_out
 test_path  = "%s/test/test.box.val"%prepro_out
+train_path  = "%s/train/train.box.val"%prepro_out
 tb_path	   = save_dir + 'event/'
 tfwriter = tf.summary.FileWriter(tb_path)
 
@@ -95,7 +106,7 @@ file_paths['rank_file'] 	    = rank_file
 file_paths['valid_path'] 	    = valid_path
 file_paths['test_path'] 	    = test_path
 
-def train(sess, dataloader, model, saver):
+def train(sess, dataloader, model, saver, rl=FLAGS.rl):
   cur_time = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
   write_log("Start time: %s"%cur_time, log_file)
   write_log("#######################################################", log_file)
@@ -108,22 +119,28 @@ def train(sess, dataloader, model, saver):
     write_log(f + " = " + v, log_file)
   write_log("#######################################################", log_file)
 
+  v = Vocab()
   loss, start_time = 0.0, time.time()
   trainset = dataloader.train_set
   if FLAGS.load:
     cnt = FLAGS.cnt
     k = cnt*FLAGS.report + 1
     best_bleu = load_rankings(rank_file)
-    print 'Rankings loaded from %s'%rank_file
-    print 'k = %d'%k
+    print('Rankings loaded from %s'%rank_file)
+    print('k = %d'%k)
   else:
     k = 0
     best_bleu = dict([(i, ('ep0', 0, 0)) for i in range(FLAGS.max_to_keep)])
 
+  train_box_val = None
+  if rl:
+    train_box_val = open(train_path, 'r').read().strip().split('\n')
+    train_box_val = [list(t.strip().split()) for t in train_box_val]
+
   for e in range(FLAGS.epoch):
     L.info('Training Epoch --%2d--\n'%e)
     for x in dataloader.batch_iter(trainset, FLAGS.batch_size, True):
-      loss += model(x, sess)
+      loss += model.train(x, sess, train_box_val, bc, rl=rl, vocab=v)
       k += 1
       progress_bar(k%FLAGS.report, FLAGS.report)
       if (k % FLAGS.report == 0):
@@ -135,7 +152,7 @@ def train(sess, dataloader, model, saver):
         loss, start_time = 0.0, time.time()
         if cnt >= 1:
           ksave_dir = save_model(model, save_dir, cnt)
-          r, b_unk, b_cpy = evaluate(sess, dataloader, model, ksave_dir, 'valid')
+          r, b_unk, b_cpy = evaluate(sess, dataloader, model, ksave_dir, 'valid', v=v)
           write_log(r, log_file)
           tfwriter.add_summary(tf_summary_entry('valid/BLEU', b_cpy), cnt)
           tfwriter.add_summary(tf_summary_entry('train/loss', avg_loss), cnt)
@@ -150,7 +167,7 @@ def train(sess, dataloader, model, saver):
               break
 
 def bleu_score(labels_file, predictions_path):
-    bleu_script = "/home/hongmin/onmt-tf-whm/third_party/multi-bleu.perl"
+    bleu_script = '%s/onmt-tf-whm/third_party/multi-bleu.perl'%HOME
     try:
       with io.open(predictions_path, encoding="utf-8", mode="r") as predictions_file:
         bleu_out = subprocess.check_output(
@@ -171,7 +188,7 @@ def bleu_score(labels_file, predictions_path):
 def evaluate(*args):
   return evaluate_both(*args) if FLAGS.rouge else evaluate_bleu(*args)
 
-def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid'):
+def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
   L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
   if mode == 'valid':
     texts_path = valid_path
@@ -185,7 +202,6 @@ def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid'):
   # for copy words from the infoboxes
   texts = open(texts_path, 'r').read().strip().split('\n')
   texts = [list(t.strip().split()) for t in texts]
-  v = Vocab()
 
   # with copy
   pred_list, pred_list_copy, gold_list = [], [], []
@@ -216,9 +232,9 @@ def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid'):
             real_sum.append(sub)
             mask_sum.append("**" + str(sub) + "**")
           else:
-            real_sum.append(v.id2word(tid))
-            mask_sum.append(v.id2word(tid))
-          unk_sum.append(v.id2word(tid))
+            real_sum.append(vocab.id2word(tid))
+            mask_sum.append(vocab.id2word(tid))
+          unk_sum.append(vocab.id2word(tid))
         sw.write(" ".join([str(x) for x in real_sum]) + '\n')
         pred_list.append([str(x) for x in real_sum])
         pred_mask.append([str(x) for x in mask_sum])
@@ -240,7 +256,7 @@ def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid'):
 
   return result, bleu_unk, bleu_copy
 
-def evaluate_both(sess, dataloader, model, ksave_dir, mode='valid'):
+def evaluate_both(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
   L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
   if mode == 'valid':
     texts_path = valid_path
@@ -254,7 +270,6 @@ def evaluate_both(sess, dataloader, model, ksave_dir, mode='valid'):
   # for copy words from the infoboxes
   texts = open(texts_path, 'r').read().strip().split('\n')
   texts = [list(t.strip().split()) for t in texts]
-  v = Vocab()
 
   # with copy
   pred_list, pred_list_copy, gold_list = [], [], []
@@ -263,6 +278,7 @@ def evaluate_both(sess, dataloader, model, ksave_dir, mode='valid'):
   k = 0
   # loss = 0.0
   data_size = len(evalset[0])
+  L.info('data_size = {}'.format(data_size))
   L.info('Evaluating by batches ...')
   for x in dataloader.batch_iter(evalset, FLAGS.batch_size, False):
     predictions, atts = model.generate(x, sess)
@@ -281,9 +297,9 @@ def evaluate_both(sess, dataloader, model, ksave_dir, mode='valid'):
             real_sum.append(sub)
             mask_sum.append("**" + str(sub) + "**")
           else:
-            real_sum.append(v.id2word(tid))
-            mask_sum.append(v.id2word(tid))
-          unk_sum.append(v.id2word(tid))
+            real_sum.append(vocab.id2word(tid))
+            mask_sum.append(vocab.id2word(tid))
+          unk_sum.append(vocab.id2word(tid))
         sw.write(" ".join([str(x) for x in real_sum]) + '\n')
         pred_list.append([str(x) for x in real_sum])
         pred_mask.append([str(x) for x in mask_sum])
@@ -325,9 +341,8 @@ def evaluate_both(sess, dataloader, model, ksave_dir, mode='valid'):
 
 
 def test(sess, dataloader, model, saver):
-  #TODO: load model from checkpoint
   result, _, _ = evaluate(sess, dataloader, model, save_dir, 'test')
-  print result
+  print(result)
 
 def main():
   config = tf.ConfigProto(allow_soft_placement=True)
@@ -344,7 +359,8 @@ def main():
             field_concat=FLAGS.field, position_concat=FLAGS.position,
             fgate_enc=FLAGS.fgate_encoder, dual_att=FLAGS.dual_attention,
             decoder_add_pos=FLAGS.decoder_pos,
-            encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate)
+            encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
+            rl=FLAGS.rl)
     sess.run(tf.global_variables_initializer())
     saver = tf.train.Saver(max_to_keep=1000)
 

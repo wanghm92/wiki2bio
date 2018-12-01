@@ -1,3 +1,4 @@
+from __future__ import print_function
 import time, os, sys, shutil, json
 import tensorflow as tf
 # Progress bar
@@ -5,7 +6,7 @@ import tensorflow as tf
 TOTAL_BAR_LENGTH = 100.
 last_time = time.time()
 begin_time = last_time
-print os.popen('stty size', 'r').read()
+print(os.popen('stty size', 'r').read())
 _, term_width = os.popen('stty size', 'r').read().split()
 term_width = int(term_width)
 
@@ -100,7 +101,7 @@ def write_word(pred_list, save_dir, name):
 def save_ckpt(sess, saver, save_dir, k):
     ckpt_path = os.path.join(save_dir, 'models/ckpts/ep%d'%k)
     save_path = saver.save(sess, ckpt_path)
-    print "TF checkpoint saved in path: %s" % save_path
+    print("TF checkpoint saved in path: %s" % save_path)
     
 def save_model(model, save_dir, cnt):
     new_dir = save_dir + 'models' + '/' 
@@ -113,7 +114,7 @@ def save_model(model, save_dir, cnt):
     return nnew_dir
 
 def write_log(s, log_file):
-    print s
+    print(s)
     with open(log_file, 'a') as f:
         f.write(s+'\n')
 

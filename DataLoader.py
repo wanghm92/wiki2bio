@@ -34,7 +34,7 @@ class DataLoader(object):
     self.train_set = self.load_data(self.train_data_path)
     self.test_set  = self.load_data(self.test_data_path)
     self.dev_set   = self.load_data(self.dev_data_path)
-    print ('Reading datasets consumes %.3f seconds' % (time.time() - start_time))
+    print('Reading datasets consumes %.3f seconds' % (time.time() - start_time))
 
   def load_data(self, path):
     summary_path, text_path, field_path, pos_path, rpos_path = path
@@ -62,14 +62,15 @@ class DataLoader(object):
     num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
                           else int(data_size / batch_size) + 1
 
-    print 'num_batches = %d'%num_batches
+    print('num_batches = %d'%num_batches)
+    indices = np.arange(data_size)
     if shuffle:
-      shuffle_indices = np.random.permutation(np.arange(data_size))
-      summaries 		= np.array(summaries)[shuffle_indices]
-      texts 			= np.array(texts)[shuffle_indices]
-      fields 			= np.array(fields)[shuffle_indices]
-      poses 			= np.array(poses)[shuffle_indices]
-      rposes 			= np.array(rposes)[shuffle_indices]
+      indices = np.random.permutation(indices)
+      summaries 		= np.array(summaries)[indices]
+      texts 			= np.array(texts)[indices]
+      fields 			= np.array(fields)[indices]
+      poses 			= np.array(poses)[indices]
+      rposes 			= np.array(rposes)[indices]
 
     for batch_num in range(num_batches):
       start_index 	= batch_num * batch_size
@@ -79,13 +80,15 @@ class DataLoader(object):
       max_summary_len = max([len(s) for s in summaries[start_index:end_index]])
       max_text_len 	= max([len(s) for s in texts[start_index:end_index]])
       batch_data 		= {'enc_in': [], 'enc_fd':[], 'enc_pos':[], 'enc_rpos':[],
-                   'enc_len':[], 'dec_in':[], 'dec_len':[], 'dec_out': []}
+                   'enc_len':[], 'dec_in':[], 'dec_len':[], 'dec_out': [],
+                       'indices':[]}
 
-      for summary, text, field, pos, rpos in zip(summaries[start_index:end_index],
-                             texts[start_index:end_index],
-                             fields[start_index:end_index],
-                             poses[start_index:end_index],
-                             rposes[start_index:end_index]):
+      for summary, text, field, pos, rpos, idxes in zip(summaries[start_index:end_index],
+                                                 texts[start_index:end_index],
+                                                 fields[start_index:end_index],
+                                                 poses[start_index:end_index],
+                                                 rposes[start_index:end_index],
+                                                 indices[start_index:end_index]):
         summary_len = len(summary)
         text_len 	= len(text)
         pos_len 	= len(pos)
@@ -93,12 +96,12 @@ class DataLoader(object):
         assert text_len == len(field)
         assert pos_len 	== len(field)
         assert rpos_len == pos_len
-        gold 	= summary + [2] + [0] * (max_summary_len - summary_len)
+        gold 	  = summary + [2] + [0] * (max_summary_len - summary_len)
         summary = summary + [0] * (max_summary_len - summary_len)
-        text 	= text 	  + [0] * (max_text_len - text_len)
+        text 	  = text 	  + [0] * (max_text_len - text_len)
         field 	= field   + [0] * (max_text_len - text_len)
-        pos 	= pos 	  + [0] * (max_text_len - text_len)
-        rpos 	= rpos 	  + [0] * (max_text_len - text_len)
+        pos 	  = pos 	  + [0] * (max_text_len - text_len)
+        rpos  	= rpos 	  + [0] * (max_text_len - text_len)
 
         if max_text_len > self.man_text_len:
           text 	 = text[:self.man_text_len]
@@ -115,5 +118,10 @@ class DataLoader(object):
         batch_data['dec_in'].append(summary)
         batch_data['dec_len'].append(summary_len)
         batch_data['dec_out'].append(gold)
-  
-      yield batch_data
+        batch_data['indices'].append(idxes)
+
+      batch_data_np = {}
+      for k, v in batch_data.iteritems():
+        batch_data_np[k] = np.array(v)
+
+      yield batch_data_np

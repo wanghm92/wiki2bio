@@ -4,7 +4,7 @@
 # @Author  : Tianyu Liu
 
 import tensorflow as tf
-import pickle
+import pickle, io
 
 
 class LstmUnit(object):
@@ -56,6 +56,6 @@ class LstmUnit(object):
             pickle.dump(param_values, f, True)
 
     def load(self, path):
-        param_values = pickle.load(open(path, 'rb'))
+        param_values = pickle.load(io.open(path, 'rb'))
         for param in param_values:
             self.params[param].load(param_values[param])

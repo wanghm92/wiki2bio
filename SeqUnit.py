@@ -3,17 +3,23 @@
 # @Time    : 17-4-27 下午8:37
 # @Author  : Tianyu Liu
 
+from __future__ import print_function
+
 import tensorflow as tf
-import pickle
+import pickle, sys
 from AttentionUnit import AttentionWrapper
 from dualAttentionUnit import dualAttentionWrapper
 from LstmUnit import LstmUnit
 from fgateLstmUnit import fgateLstmUnit
 from OutputUnit import OutputUnit
+from reward import get_reward
+import numpy as np
 
 
 class SeqUnit(object):
-  def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab,field_vocab, position_vocab, target_vocab, field_concat, position_concat, fgate_enc, dual_att, encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name,start_token=2, stop_token=2, max_length=150):
+  def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab,field_vocab, position_vocab,
+               target_vocab, field_concat, position_concat, fgate_enc, dual_att, encoder_add_pos, decoder_add_pos,
+               learning_rate, scope_name, name,start_token=2, stop_token=2, max_length=150, rl=False, alpha=1):
     '''
     batch_size, hidden_size, emb_size, field_size, pos_size:
       size of batch; hidden layer; word/field/position embedding
@@ -34,26 +40,23 @@ class SeqUnit(object):
     self.field_size 		  = field_size
     self.pos_size 			  = pos_size
     self.uni_size 			  = emb_size if not field_concat else emb_size+field_size
-    self.uni_size 			  = self.uni_size if not position_concat \
-                          else self.uni_size+2*pos_size
-    self.field_encoder_size   = field_size if not encoder_add_pos \
-                         else field_size+2*pos_size
-    self.field_att_size 	  = field_size if not decoder_add_pos \
-                         else field_size+2*pos_size
+    self.uni_size 			  = self.uni_size if not position_concat else self.uni_size+2*pos_size
+    self.field_encoder_size   = field_size if not encoder_add_pos else field_size+2*pos_size
+    self.field_att_size 	    = field_size if not decoder_add_pos  else field_size+2*pos_size
     self.source_vocab 	 = source_vocab
     self.target_vocab 	 = target_vocab
-    self.field_vocab 	 = field_vocab
+    self.field_vocab 	   = field_vocab
     self.position_vocab  = position_vocab
     self.grad_clip 		 = 5.0
     self.start_token	 = start_token
     self.stop_token 	 = stop_token
     self.max_length 	 = max_length
     self.scope_name 	 = scope_name
-    self.name 			 = name
+    self.name 			   = name
     self.field_concat 	 = field_concat
     self.position_concat = position_concat
-    self.fgate_enc 		 = fgate_enc
-    self.dual_att 		 = dual_att
+    self.fgate_enc 		   = fgate_enc
+    self.dual_att 		   = dual_att
     self.encoder_add_pos = encoder_add_pos
     self.decoder_add_pos = decoder_add_pos
 
@@ -62,20 +65,27 @@ class SeqUnit(object):
 
     self.encoder_input 	= tf.placeholder(tf.int32, [None, None])
     self.encoder_field 	= tf.placeholder(tf.int32, [None, None])
-    self.encoder_pos 	= tf.placeholder(tf.int32, [None, None])
+    self.encoder_pos 	  = tf.placeholder(tf.int32, [None, None])
     self.encoder_rpos 	= tf.placeholder(tf.int32, [None, None])
     self.decoder_input 	= tf.placeholder(tf.int32, [None, None])
-    self.encoder_len 	= tf.placeholder(tf.int32, [None])
-    self.decoder_len 	= tf.placeholder(tf.int32, [None])
+    self.encoder_len 	  = tf.placeholder(tf.int32, [None])
+    self.decoder_len 	  = tf.placeholder(tf.int32, [None])
     self.decoder_output = tf.placeholder(tf.int32, [None, None])
-    self.enc_mask 		= tf.sign(tf.to_float(self.encoder_pos))
+    self.enc_mask 		  = tf.sign(tf.to_float(self.encoder_pos))
+    if rl:
+      self.decoder_input_sampled = tf.placeholder(tf.int32, [None, None])
+      self.decoder_len_sampled  = tf.placeholder(tf.int32, [None])
+      self.decoder_output_sampled = tf.placeholder(tf.int32, [None, None])
+      self.rewards = tf.placeholder(tf.float32, [None, None])
+      self.alpha = tf.constant(alpha, dtype=tf.float32)
+
     with tf.variable_scope(scope_name):
       if self.fgate_enc:
-        print 'field-gated encoder LSTM'
+        print('field-gated encoder LSTM')
         self.enc_lstm = fgateLstmUnit(self.hidden_size, self.uni_size,
                         self.field_encoder_size, 'encoder_select')
       else:
-        print 'normal encoder LSTM'
+        print('normal encoder LSTM')
         self.enc_lstm = LstmUnit(self.hidden_size, self.uni_size, 'encoder_lstm')
       self.dec_lstm = LstmUnit(self.hidden_size, self.emb_size, 'decoder_lstm')
       self.dec_out  = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output')
@@ -86,98 +96,90 @@ class SeqUnit(object):
     # ====== embeddings ====== #
     with tf.device('/cpu:0'):
       with tf.variable_scope(scope_name):
-        self.embedding = tf.get_variable('embedding', [self.source_vocab,
-                                 self.emb_size])
-        self.encoder_embed = tf.nn.embedding_lookup(self.embedding,
-                              self.encoder_input)
-        self.decoder_embed = tf.nn.embedding_lookup(self.embedding,
-                              self.decoder_input)
+        self.embedding = tf.get_variable('embedding', [self.source_vocab, self.emb_size])
+        self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
+        self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
+        if rl:
+          self.decoder_embed_sampled = tf.nn.embedding_lookup(self.embedding, self.decoder_input_sampled)
 
-        if self.field_concat or self.fgate_enc or \
-           self.encoder_add_pos or self.decoder_add_pos:
-          self.fembedding  = tf.get_variable('fembedding',
-                            [self.field_vocab, self.field_size])
-          self.field_embed = tf.nn.embedding_lookup(self.fembedding,
-                                self.encoder_field)
+        if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos:
+          self.fembedding  = tf.get_variable('fembedding', [self.field_vocab, self.field_size])
+          self.field_embed = tf.nn.embedding_lookup(self.fembedding, self.encoder_field)
           self.field_pos_embed = self.field_embed
+
           if self.field_concat:
-            self.encoder_embed = tf.concat([self.encoder_embed,
-                            self.field_embed], 2)
+            self.encoder_embed = tf.concat([self.encoder_embed, self.field_embed], 2)
 
         if self.position_concat or self.encoder_add_pos or self.decoder_add_pos:
-          self.pembedding = tf.get_variable('pembedding',
-                            [self.position_vocab, self.pos_size])
-          self.rembedding = tf.get_variable('rembedding',
-                            [self.position_vocab, self.pos_size])
-          self.pos_embed  = tf.nn.embedding_lookup(self.pembedding,self.encoder_pos)
-          self.rpos_embed = tf.nn.embedding_lookup(self.rembedding,
-                               self.encoder_rpos)
+          self.pembedding = tf.get_variable('pembedding', [self.position_vocab, self.pos_size])
+          self.rembedding = tf.get_variable('rembedding', [self.position_vocab, self.pos_size])
+          self.pos_embed  = tf.nn.embedding_lookup(self.pembedding, self.encoder_pos)
+          self.rpos_embed = tf.nn.embedding_lookup(self.rembedding, self.encoder_rpos)
+
           if position_concat:
-            self.encoder_embed   = tf.concat([self.encoder_embed,
-                              self.pos_embed,
-                              self.rpos_embed], 2)
-            self.field_pos_embed = tf.concat([self.field_embed,
-                              self.pos_embed,
-                              self.rpos_embed], 2)
+            self.encoder_embed   = tf.concat([self.encoder_embed, self.pos_embed, self.rpos_embed], 2)
+            self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
           elif self.encoder_add_pos or self.decoder_add_pos:
-            self.field_pos_embed = tf.concat([self.field_embed,
-                              self.pos_embed,
-                              self.rpos_embed], 2)
+            self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
 
     if self.field_concat or self.fgate_enc:
       self.params.update({'fembedding': self.fembedding})
     if self.position_concat or self.encoder_add_pos or self.decoder_add_pos:
       self.params.update({'pembedding': self.pembedding})
       self.params.update({'rembedding': self.rembedding})
+
     self.params.update({'embedding': self.embedding})
 
     # ====== encoder ====== #
     if self.fgate_enc:
-      print 'field gated encoder used'
-      en_outputs, en_state = self.fgate_encoder(self.encoder_embed,
-                            self.field_pos_embed,
-                            self.encoder_len)
+      print('field gated encoder used')
+      en_outputs, en_state = self.fgate_encoder(self.encoder_embed, self.field_pos_embed, self.encoder_len)
     else:
-      print 'normal encoder used'
+      print('normal encoder used')
       en_outputs, en_state = self.encoder(self.encoder_embed, self.encoder_len)
 
     # ====== decoder ====== #
     if self.dual_att:
-      print 'dual attention mechanism used'
+      print('dual attention mechanism used')
       with tf.variable_scope(scope_name):
         self.att_layer = dualAttentionWrapper(self.hidden_size,
-                            self.hidden_size,
-                            self.field_att_size,
-                            en_outputs,
-                            self.field_pos_embed,
-                            "attention")
+                                              self.hidden_size,
+                                              self.field_att_size,
+                                              en_outputs,
+                                              self.field_pos_embed,
+                                              "attention")
         self.units.update({'attention': self.att_layer})
     else:
-      print "normal attention used"
+      print("normal attention used")
       with tf.variable_scope(scope_name):
         self.att_layer = AttentionWrapper(self.hidden_size,
-                          self.hidden_size,
-                          en_outputs,
-                          "attention")
+                                          self.hidden_size,
+                                          en_outputs,
+                                          "attention")
         self.units.update({'attention': self.att_layer})
 
+    # ------ decoder for training ------ #
+    de_outputs, de_state = self.decoder_t(en_state, self.decoder_embed, self.decoder_len)
 
-    # decoder for training
-    de_outputs, de_state = self.decoder_t(en_state, self.decoder_embed,self.decoder_len)
-
-    # decoder for testing
+    # ------ decoder for testing ------ #
     self.g_tokens, self.atts = self.decoder_g(en_state)
     # self.beam_seqs, self.beam_probs, self.cand_seqs, self.cand_probs = self.decoder_beam(en_state, beam_size)
 
-
-    losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=de_outputs,
-                                labels=self.decoder_output)
+    losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=de_outputs, labels=self.decoder_output)
     mask = tf.sign(tf.to_float(self.decoder_output))
     losses = mask * losses
     self.mean_loss = tf.reduce_mean(losses)
 
+    if rl:
+      de_outputs_sampled, de_state_sampled = self.decoder_t(en_state, self.decoder_embed_sampled, self.decoder_len_sampled)
+      neg_log_prob = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=de_outputs_sampled, labels=self.decoder_output_sampled)
+      mask_rl = tf.sign(tf.to_float(self.decoder_output_sampled))
+      neg_log_prob = mask_rl * neg_log_prob
+      loss_rl = tf.reduce_mean(neg_log_prob * self.rewards)  # reward guided loss
+      self.mean_loss += self.alpha*self.mean_loss + (1-self.alpha) * loss_rl
+
     tvars = tf.trainable_variables()
-    grads, _ = tf.clip_by_global_norm(tf.gradients(self.mean_loss, tvars),self.grad_clip)
+    grads, _ = tf.clip_by_global_norm(tf.gradients(self.mean_loss, tvars), self.grad_clip)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     self.train_op = optimizer.apply_gradients(zip(grads, tvars))
 
@@ -304,8 +306,7 @@ class SeqUnit(object):
     time 	= tf.constant(0, dtype=tf.int32)
     h0 		= initial_state
     f0 		= tf.zeros([batch_size], dtype=tf.bool)
-    x0 		= tf.nn.embedding_lookup(self.embedding,
-                     tf.fill([batch_size], self.start_token))
+    x0 		= tf.nn.embedding_lookup(self.embedding, tf.fill([batch_size], self.start_token))
     emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
     att_ta 	= tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
 
@@ -358,9 +359,13 @@ class SeqUnit(object):
       # initial_state = tf.reshape(initial_state, [1,-1])
       logprobs2d = tf.nn.log_softmax(o_t)
       total_probs = logprobs2d + tf.reshape(beam_probs_0, [-1, 1])
-      total_probs_noEOS = tf.concat([tf.slice(total_probs, [0, 0], [1, self.stop_token]), tf.tile([[-3e38]], [1, 1]), tf.slice(total_probs, [0, self.stop_token + 1],[1, self.target_vocab - self.stop_token - 1])], 1)
+      total_probs_noEOS = tf.concat([tf.slice(total_probs, [0, 0], [1, self.stop_token]),
+                                     tf.tile([[-3e38]], [1, 1]),
+                                     tf.slice(total_probs, [0, self.stop_token + 1],
+                                              [1, self.target_vocab - self.stop_token - 1])
+                                     ], 1)
       flat_total_probs = tf.reshape(total_probs_noEOS, [-1])
-      print flat_total_probs.get_shape().as_list()
+      print(flat_total_probs.get_shape().as_list())
 
       beam_k = tf.minimum(tf.size(flat_total_probs), beam_size)
       next_beam_probs, top_indices = tf.nn.top_k(flat_total_probs, k=beam_k)
@@ -374,7 +379,7 @@ class SeqUnit(object):
       cand_seqs_pad = tf.pad(cand_seqs_0, [[0, 0], [0, 1]])
       beam_seqs_EOS = tf.pad(beam_seqs_0, [[0, 0], [0, 1]])
       new_cand_seqs = tf.concat([cand_seqs_pad, beam_seqs_EOS], 0)
-      print new_cand_seqs.get_shape().as_list()
+      print(new_cand_seqs.get_shape().as_list())
 
       EOS_probs = tf.slice(total_probs, [0, self.stop_token], [beam_size, 1])
       new_cand_probs = tf.concat([cand_probs_0, tf.reshape(EOS_probs, [-1])], 0)
@@ -389,7 +394,7 @@ class SeqUnit(object):
       part_state_0._shape = tf.TensorShape((None, None))
       part_state_1._shape = tf.TensorShape((None, None))
       next_states = (part_state_0, part_state_1)
-      print next_states[0].get_shape().as_list()
+      print(next_states[0].get_shape().as_list())
       return next_beam_seqs, next_beam_probs, next_cand_seqs, next_cand_probs, next_states, time_1
 
     beam_seqs_1, beam_probs_1, cand_seqs_1, cand_probs_1, states_1, time_1 = beam_init()
@@ -407,38 +412,42 @@ class SeqUnit(object):
       states : [beam_size * hidden_size, beam_size * hidden_size]
       '''
       inputs = tf.reshape(tf.slice(beam_seqs, [0, time], [beam_size, 1]), [beam_size])
-      # print inputs.get_shape().as_list()
+      # print(inputs.get_shape().as_list()
       x_t = tf.nn.embedding_lookup(self.embedding, inputs)
       # print(x_t.get_shape().as_list())
       o_t, s_nt = self.dec_lstm(x_t, states)
       o_t, w_t = self.att_layer(o_t)
       o_t = self.dec_out(o_t)
       logprobs2d = tf.nn.log_softmax(o_t)
-      print logprobs2d.get_shape().as_list()
+      print(logprobs2d.get_shape().as_list())
       total_probs = logprobs2d + tf.reshape(beam_probs, [-1, 1])
-      print total_probs.get_shape().as_list()
-      total_probs_noEOS = tf.concat([tf.slice(total_probs, [0, 0], [beam_size, self.stop_token]), tf.tile([[-3e38]], [beam_size, 1]), tf.slice(total_probs, [0, self.stop_token + 1],[beam_size,self.target_vocab- self.stop_token - 1])], 1)
-      print total_probs_noEOS.get_shape().as_list()
+      print(total_probs.get_shape().as_list())
+      total_probs_noEOS = tf.concat([tf.slice(total_probs, [0, 0], [beam_size, self.stop_token]),
+                                     tf.tile([[-3e38]], [beam_size, 1]),
+                                     tf.slice(total_probs, [0, self.stop_token + 1],
+                                              [beam_size,self.target_vocab- self.stop_token - 1])
+                                     ], 1)
+      print(total_probs_noEOS.get_shape().as_list())
       flat_total_probs = tf.reshape(total_probs_noEOS, [-1])
-      print flat_total_probs.get_shape().as_list()
+      print(flat_total_probs.get_shape().as_list())
 
       beam_k = tf.minimum(tf.size(flat_total_probs), beam_size)
       next_beam_probs, top_indices = tf.nn.top_k(flat_total_probs, k=beam_k)
-      print next_beam_probs.get_shape().as_list()
+      print(next_beam_probs.get_shape().as_list())
 
       next_bases = tf.floordiv(top_indices, self.target_vocab)
       next_mods = tf.mod(top_indices, self.target_vocab)
-      print next_mods.get_shape().as_list()
+      print(next_mods.get_shape().as_list())
 
       next_beam_seqs = tf.concat([tf.gather(beam_seqs, next_bases),
                     tf.reshape(next_mods, [-1, 1])], 1)
       next_states = (tf.gather(s_nt[0], next_bases), tf.gather(s_nt[1], next_bases))
-      print next_beam_seqs.get_shape().as_list()
+      print(next_beam_seqs.get_shape().as_list())
 
       cand_seqs_pad = tf.pad(cand_seqs, [[0, 0], [0, 1]])
       beam_seqs_EOS = tf.pad(beam_seqs, [[0, 0], [0, 1]])
       new_cand_seqs = tf.concat([cand_seqs_pad, beam_seqs_EOS], 0)
-      print new_cand_seqs.get_shape().as_list()
+      print(new_cand_seqs.get_shape().as_list())
 
       EOS_probs = tf.slice(total_probs, [0, self.stop_token], [beam_size, 1])
       new_cand_probs = tf.concat([cand_probs, tf.reshape(EOS_probs, [-1])], 0)
@@ -460,7 +469,10 @@ class SeqUnit(object):
 
     return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
-  def __call__(self, x, sess):
+  def train(self, x, sess, train_box_val, bc, rl=False, vocab=None):
+    return self.train_rl(x, sess, train_box_val, bc, vocab=vocab) if rl else self.train_mle(x, sess)
+
+  def train_mle(self, x, sess):
     loss,  _ = sess.run([self.mean_loss, self.train_op],
                 {self.encoder_input:  x['enc_in'],
                  self.encoder_len:    x['enc_len'],
@@ -472,11 +484,83 @@ class SeqUnit(object):
                  self.decoder_output: x['dec_out']})
     return loss
 
+  def train_rl(self, x, sess, train_box_val, bc, vocab=None):
+
+    if vocab is None:
+      raise ValueError("vocab cannot be None")
+
+    real_sum_list, unk_sum_list, marked_sum_list, unkmask_list, real_ids_list = [], [], [], [], []
+
+    box_ids = x['enc_in']
+    sample_indices = x['indices']
+    dec_in = x['dec_in']
+    print(box_ids.shape)
+    print(sample_indices.shape)
+    print(dec_in.shape)
+    max_gold_len = dec_in.shape[1]
+    print(max_gold_len)
+    sys.exit(0)
+    train_box_batch = train_box_val[sample_indices]
+    prediction_ids, atts = self.generate(x, sess)     # predictions: [batch, length_decoder]
+    atts = np.squeeze(atts)     # atts: [length_decoder, length_encoder, batch]
+    print(prediction_ids.shape)
+    print(atts.shape)
+
+    batch = 0
+    for pred in np.array(prediction_ids):
+      real_sum, unk_sum, marked_sum, unk_mask, real_ids = [], [], [], [], []
+
+      pred = list(pred) # 2 is eos, trim the output to the end of sentence
+      if 2 in pred:
+        pred = pred[:pred.index(2)] if pred[0] != 2 else [2]
+
+      for idx, tid in enumerate(pred):
+        # replace UNK with input word with highest attention weight
+        if tid == 3:
+          box_length = len(train_box_batch[batch])
+          max_att = np.argmax(atts[idx, :box_length, batch])
+          sub_id = box_ids[batch][max_att]
+          sub = train_box_batch[batch][max_att]
+
+          real_sum.append(sub)
+          marked_sum.append("**" + str(sub) + "**")
+          unk_mask.append(int(sub_id != 3))
+          real_ids.append(sub_id)
+        else:
+          real_sum.append(vocab.id2word(tid))
+          marked_sum.append(vocab.id2word(tid))
+          unk_mask.append(1)
+          real_ids.append(tid)
+
+        unk_sum.append(vocab.id2word(tid))
+
+      print(marked_sum)
+      print(real_ids)
+      print(unk_mask)
+      print('-'*50)
+      real_sum_list.append([str(x) for x in real_sum])
+      marked_sum_list.append([str(x) for x in marked_sum])
+      unk_sum_list.append([str(x) for x in unk_sum])
+      unkmask_list.append(unk_mask)
+      real_ids_list.append(real_ids)
+
+      batch += 1
+
+    max_summary_len = max([len(x) for x in unkmask_list]) # max_summary_len = predictions.shape()[-1] - 1, eos takes one
+    unkmask_list = np.array([mask + [0] * (max_summary_len - len(mask)) for mask in unkmask_list], dtype=np.float32)
+    real_ids_list = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
+
+    pred_sentences = [' '.join(x) for x in real_sum_list]
+    result, mask = bc.encode(pred_sentences)
+    rewards = get_reward(train_box_batch, pred_sentences, real_ids_list, result, mask, unkmask_list, max_gold_len)
+
+    return loss
+
   def generate(self, x, sess):
     predictions, atts = sess.run([self.g_tokens, self.atts],
                    {self.encoder_input: x['enc_in'],
                     self.encoder_len:   x['enc_len'],
-                      self.encoder_field: x['enc_fd'],
+                    self.encoder_field: x['enc_fd'],
                     self.encoder_pos:   x['enc_pos'],
                     self.encoder_rpos:  x['enc_rpos']})
     return predictions, atts
