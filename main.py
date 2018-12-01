@@ -39,6 +39,7 @@ tf.app.flags.DEFINE_integer("target_vocab", 20003, 'vocabulary size')
 tf.app.flags.DEFINE_integer("report", 5000, 'report valid results after some steps')
 tf.app.flags.DEFINE_integer("max_to_keep", 5, 'maximum number of checkpoints to save')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003, 'learning rate')
+tf.app.flags.DEFINE_float("alpha", 0.9, 'percentage of MLE loss')
 
 tf.app.flags.DEFINE_boolean("load", False, 'whether to load model parameters')
 tf.app.flags.DEFINE_boolean("rl", False, 'whether to add policy gradient')
@@ -61,12 +62,10 @@ FLAGS = tf.app.flags.FLAGS
 
 prefix = FLAGS.prefix
 save_dir = '%s/table2text_nlg/output/fieldgate_output/results/res/%s/'%(HOME, prefix)
-write_log('save_dir: %s'%save_dir)
 load_dir = save_dir + 'models/%s/'%FLAGS.cnt
 save_file_dir = save_dir + 'src/'
 # ckpt_dir = save_dir + 'ckpt/'
 pred_dir = '%s/table2text_nlg/output/fieldgate_output/results/evaluation/%s/'%(HOME, prefix)
-write_log('pred_dir: %s'%pred_dir)
 
 if not os.path.exists(save_dir):
   os.mkdir(save_dir)
@@ -92,6 +91,9 @@ test_path  = "%s/test/test.box.val"%prepro_out
 train_path  = "%s/train/train.box.val"%prepro_out
 tb_path	   = save_dir + 'event/'
 tfwriter = tf.summary.FileWriter(tb_path)
+
+write_log('save_dir: %s'%save_dir, log_file)
+write_log('pred_dir: %s'%pred_dir, log_file)
 
 file_paths['gold_path_test']  = gold_path_test
 file_paths['gold_path_valid'] = gold_path_valid
@@ -360,11 +362,12 @@ def main():
             fgate_enc=FLAGS.fgate_encoder, dual_att=FLAGS.dual_attention,
             decoder_add_pos=FLAGS.decoder_pos,
             encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
-            rl=FLAGS.rl)
+            rl=FLAGS.rl, alpha=FLAGS.alpha)
     sess.run(tf.global_variables_initializer())
     saver = tf.train.Saver(max_to_keep=1000)
 
     if FLAGS.load:
+      L.info('Loading Model from %s ...'%load_dir)
       model.load(load_dir)
       L.info('Model loaded from %s'%load_dir)
     if FLAGS.mode == 'train':

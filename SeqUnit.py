@@ -6,7 +6,7 @@
 from __future__ import print_function
 
 import tensorflow as tf
-import pickle, sys
+import pickle, sys, time
 from AttentionUnit import AttentionWrapper
 from dualAttentionUnit import dualAttentionWrapper
 from LstmUnit import LstmUnit
@@ -59,7 +59,7 @@ class SeqUnit(object):
     self.dual_att 		   = dual_att
     self.encoder_add_pos = encoder_add_pos
     self.decoder_add_pos = decoder_add_pos
-
+    self.alpha_value = alpha
     self.units  = {}
     self.params = {}
 
@@ -77,7 +77,7 @@ class SeqUnit(object):
       self.decoder_len_sampled  = tf.placeholder(tf.int32, [None])
       self.decoder_output_sampled = tf.placeholder(tf.int32, [None, None])
       self.rewards = tf.placeholder(tf.float32, [None, None])
-      self.alpha = tf.constant(alpha, dtype=tf.float32)
+      self.alpha = tf.constant(self.alpha_value, dtype=tf.float32)
 
     with tf.variable_scope(scope_name):
       if self.fgate_enc:
@@ -269,7 +269,8 @@ class SeqUnit(object):
 
   def decoder_t(self, initial_state, inputs, inputs_len):
     batch_size = tf.shape(self.decoder_input)[0]
-    max_time = tf.shape(self.decoder_input)[1]
+    # max_time = tf.shape(self.decoder_input)[1]
+    max_time = tf.shape(inputs)[1]
     encoder_len = tf.shape(self.encoder_input)[1]
 
     time = tf.constant(0, dtype=tf.int32)
@@ -484,35 +485,33 @@ class SeqUnit(object):
                  self.decoder_output: x['dec_out']})
     return loss
 
-  def train_rl(self, x, sess, train_box_val, bc, vocab=None):
+  def train_rl(self, batch_data, sess, train_box_val, bc, vocab=None):
+    # start_time = time.time()
 
     if vocab is None:
       raise ValueError("vocab cannot be None")
 
     real_sum_list, unk_sum_list, marked_sum_list, unkmask_list, real_ids_list = [], [], [], [], []
 
-    box_ids = x['enc_in']
-    sample_indices = x['indices']
-    dec_in = x['dec_in']
-    print(box_ids.shape)
-    print(sample_indices.shape)
-    print(dec_in.shape)
-    max_gold_len = dec_in.shape[1]
-    print(max_gold_len)
-    sys.exit(0)
-    train_box_batch = train_box_val[sample_indices]
-    prediction_ids, atts = self.generate(x, sess)     # predictions: [batch, length_decoder]
+    box_ids = batch_data['enc_in']
+    sample_indices = batch_data['indices']
+
+    train_box_batch = [train_box_val[i] for i in sample_indices]
+    prediction_ids, atts = self.generate(batch_data, sess)     # predictions: [batch, length_decoder]
     atts = np.squeeze(atts)     # atts: [length_decoder, length_encoder, batch]
-    print(prediction_ids.shape)
-    print(atts.shape)
+    # print(prediction_ids.shape)
+    # print(atts.shape)
 
     batch = 0
+    summary_len = []
     for pred in np.array(prediction_ids):
-      real_sum, unk_sum, marked_sum, unk_mask, real_ids = [], [], [], [], []
+      real_sum, marked_sum, unk_mask, real_ids = [], [], [], []
 
       pred = list(pred) # 2 is eos, trim the output to the end of sentence
       if 2 in pred:
         pred = pred[:pred.index(2)] if pred[0] != 2 else [2]
+
+      summary_len.append(len(pred))
 
       for idx, tid in enumerate(pred):
         # replace UNK with input word with highest attention weight
@@ -532,27 +531,50 @@ class SeqUnit(object):
           unk_mask.append(1)
           real_ids.append(tid)
 
-        unk_sum.append(vocab.id2word(tid))
-
-      print(marked_sum)
-      print(real_ids)
-      print(unk_mask)
-      print('-'*50)
-      real_sum_list.append([str(x) for x in real_sum])
-      marked_sum_list.append([str(x) for x in marked_sum])
-      unk_sum_list.append([str(x) for x in unk_sum])
+      # print(marked_sum)
+      # print(real_ids)
+      # print(unk_mask)
+      # print('-'*50)
+      real_sum_list.append([x for x in real_sum])
+      marked_sum_list.append([x for x in marked_sum])
       unkmask_list.append(unk_mask)
       real_ids_list.append(real_ids)
 
       batch += 1
 
+    summary_len = np.array(summary_len, dtype=np.float32)
+    # print(summary_len)
     max_summary_len = max([len(x) for x in unkmask_list]) # max_summary_len = predictions.shape()[-1] - 1, eos takes one
+    # print(max_summary_len)
     unkmask_list = np.array([mask + [0] * (max_summary_len - len(mask)) for mask in unkmask_list], dtype=np.float32)
-    real_ids_list = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
+    dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
+    dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
 
-    pred_sentences = [' '.join(x) for x in real_sum_list]
-    result, mask = bc.encode(pred_sentences)
-    rewards = get_reward(train_box_batch, pred_sentences, real_ids_list, result, mask, unkmask_list, max_gold_len)
+    # print(dec_in_sampled.shape)
+    assert dec_in_sampled.shape == unkmask_list.shape
+
+    rewards = get_reward(train_box_batch, real_sum_list, max_summary_len, bc)
+    # print(rewards)
+
+    # cost_time = time.time() - start_time
+    # print("prepare time = %.3f" % (cost_time))
+
+    loss,  _ = sess.run([self.mean_loss, self.train_op],
+                {self.encoder_input:  batch_data['enc_in'],
+                 self.encoder_field:  batch_data['enc_fd'],
+                 self.encoder_pos:    batch_data['enc_pos'],
+                 self.encoder_rpos:   batch_data['enc_rpos'],
+                 self.decoder_input:  batch_data['dec_in'],
+                 self.encoder_len:    batch_data['enc_len'],
+                 self.decoder_len: 	  batch_data['dec_len'],
+                 self.decoder_output: batch_data['dec_out'],
+
+                 self.decoder_input_sampled: dec_in_sampled,
+                 self.decoder_len_sampled: summary_len,
+                 self.decoder_output_sampled: dec_out_sampled,
+                 self.rewards: rewards,
+                 })
+
 
     return loss
 
