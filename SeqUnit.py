@@ -168,15 +168,16 @@ class SeqUnit(object):
     losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=de_outputs, labels=self.decoder_output)
     mask = tf.sign(tf.to_float(self.decoder_output))
     losses = mask * losses
-    self.mean_loss = tf.reduce_mean(losses)
+    self.loss_mle = tf.reduce_mean(losses)
+    self.mean_loss = self.loss_mle
 
     if rl:
       de_outputs_sampled, de_state_sampled = self.decoder_t(en_state, self.decoder_embed_sampled, self.decoder_len_sampled)
       neg_log_prob = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=de_outputs_sampled, labels=self.decoder_output_sampled)
       mask_rl = tf.sign(tf.to_float(self.decoder_output_sampled))
       neg_log_prob = mask_rl * neg_log_prob
-      loss_rl = tf.reduce_mean(neg_log_prob * self.rewards)  # reward guided loss
-      self.mean_loss += self.alpha*self.mean_loss + (1-self.alpha) * loss_rl
+      self.loss_rl = tf.reduce_mean(neg_log_prob * self.rewards)  # reward guided loss
+      self.mean_loss = self.alpha*self.loss_mle + (1-self.alpha) * self.loss_rl
 
     tvars = tf.trainable_variables()
     grads, _ = tf.clip_by_global_norm(tf.gradients(self.mean_loss, tvars), self.grad_clip)
@@ -559,7 +560,7 @@ class SeqUnit(object):
     # cost_time = time.time() - start_time
     # print("prepare time = %.3f" % (cost_time))
 
-    loss,  _ = sess.run([self.mean_loss, self.train_op],
+    loss, loss_mle, loss_rl,  _ = sess.run([self.mean_loss, self.loss_mle, self.loss_rl, self.train_op],
                 {self.encoder_input:  batch_data['enc_in'],
                  self.encoder_field:  batch_data['enc_fd'],
                  self.encoder_pos:    batch_data['enc_pos'],
@@ -576,7 +577,7 @@ class SeqUnit(object):
                  })
 
 
-    return loss
+    return loss, loss_mle, loss_rl
 
   def generate(self, x, sess):
     predictions, atts = sess.run([self.g_tokens, self.atts],

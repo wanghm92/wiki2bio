@@ -11,7 +11,7 @@ def convert_back_to_brackets(input_str):
 
 POS=1
 NEU=0
-NEG=-1
+NEG=0
 
 def get_reward(train_box_batch, real_sum_list, max_summary_len, bert_server):
 

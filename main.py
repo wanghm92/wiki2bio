@@ -22,7 +22,7 @@ bc = BertClient()
 last_best = 0.0
 file_paths = {}
 
-suffix='small'
+suffix='data'
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 
@@ -123,6 +123,7 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
 
   v = Vocab()
   loss, start_time = 0.0, time.time()
+  loss_mle_sum, loss_rl_sum = 0.0, 0.0
   trainset = dataloader.train_set
   if FLAGS.load:
     cnt = FLAGS.cnt
@@ -142,19 +143,35 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
   for e in range(FLAGS.epoch):
     L.info('Training Epoch --%2d--\n'%e)
     for x in dataloader.batch_iter(trainset, FLAGS.batch_size, True):
-      loss += model.train(x, sess, train_box_val, bc, rl=rl, vocab=v)
+      model_returns = model.train(x, sess, train_box_val, bc, rl=rl, vocab=v)
+      if rl:
+        loss_mean, loss_mle, loss_rl = model_returns
+      else:
+        loss_mean = model_returns
+      loss += loss_mean
+      loss_mle_sum += loss_mle
+      loss_rl_sum += loss_rl
       k += 1
       progress_bar(k%FLAGS.report, FLAGS.report)
       if (k % FLAGS.report == 0):
         cnt = k//FLAGS.report
         cost_time = time.time() - start_time
         avg_loss = loss / (FLAGS.report*1.0)
-        write_log("%d : avg_loss = %.3f, time = %.3f"%(cnt,avg_loss,cost_time), log_file)
+        write_log("%d : avg_loss = %.3f, time = %.3f"% (cnt, avg_loss, cost_time), log_file)
         tfwriter.add_summary(tf_summary_entry('train/loss', avg_loss), cnt)
         loss, start_time = 0.0, time.time()
+        if rl:
+          avg_loss_mle = loss_mle_sum / (FLAGS.report*1.0)
+          avg_loss_rl = loss_rl_sum / (FLAGS.report*1.0)
+          write_log("%d : avg_loss_mle = %.3f, avg_loss_rl = %.3f, time = %.3f"
+                  %(cnt, avg_loss_mle, avg_loss_rl, cost_time), log_file)
+          tfwriter.add_summary(tf_summary_entry('train/loss_mle', avg_loss_mle), cnt)
+          tfwriter.add_summary(tf_summary_entry('train/loss_rl', avg_loss_rl), cnt)
+          loss_mle_sum, loss_rl_sum = 0.0, 0.0
+
         if cnt >= 1:
           ksave_dir = save_model(model, save_dir, cnt)
-          r, b_unk, b_cpy = evaluate(sess, dataloader, model, ksave_dir, 'valid', v=v)
+          r, b_unk, b_cpy = evaluate(sess, dataloader, model, ksave_dir, 'valid', v)
           write_log(r, log_file)
           tfwriter.add_summary(tf_summary_entry('valid/BLEU', b_cpy), cnt)
           tfwriter.add_summary(tf_summary_entry('train/loss', avg_loss), cnt)
