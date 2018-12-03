@@ -19,7 +19,8 @@ import numpy as np
 class SeqUnit(object):
   def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab,field_vocab, position_vocab,
                target_vocab, field_concat, position_concat, fgate_enc, dual_att, encoder_add_pos, decoder_add_pos,
-               learning_rate, scope_name, name,start_token=2, stop_token=2, max_length=150, rl=False, alpha=1):
+               learning_rate, scope_name, name, start_token=2, stop_token=2, max_length=150,
+               rl=False, loss_alpha=1, beam_size=1, lp_alpha=0.9):
     '''
     batch_size, hidden_size, emb_size, field_size, pos_size:
       size of batch; hidden layer; word/field/position embedding
@@ -59,7 +60,7 @@ class SeqUnit(object):
     self.dual_att 		   = dual_att
     self.encoder_add_pos = encoder_add_pos
     self.decoder_add_pos = decoder_add_pos
-    self.alpha_value = alpha
+    self.loss_alpha_value = loss_alpha
     self.units  = {}
     self.params = {}
 
@@ -77,7 +78,7 @@ class SeqUnit(object):
       self.decoder_len_sampled  = tf.placeholder(tf.int32, [None])
       self.decoder_output_sampled = tf.placeholder(tf.int32, [None, None])
       self.rewards = tf.placeholder(tf.float32, [None, None])
-      self.alpha = tf.constant(self.alpha_value, dtype=tf.float32)
+      self.loss_alpha = tf.constant(self.loss_alpha_value, dtype=tf.float32)
 
     with tf.variable_scope(scope_name):
       if self.fgate_enc:
@@ -163,7 +164,9 @@ class SeqUnit(object):
 
     # ------ decoder for testing ------ #
     self.g_tokens, self.atts = self.decoder_g(en_state)
-    # self.beam_seqs, self.beam_probs, self.cand_seqs, self.cand_probs = self.decoder_beam(en_state, beam_size)
+
+    # ------ beam search decoder ------ #
+    self.beam_seqs, self.beam_probs, self.cand_seqs, self.cand_probs = self.decoder_beam(en_state, beam_size, lp_alpha)
 
     losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=de_outputs, labels=self.decoder_output)
     mask = tf.sign(tf.to_float(self.decoder_output))
@@ -177,7 +180,7 @@ class SeqUnit(object):
       mask_rl = tf.sign(tf.to_float(self.decoder_output_sampled))
       neg_log_prob = mask_rl * neg_log_prob
       self.loss_rl = tf.reduce_mean(neg_log_prob * self.rewards)  # reward guided loss
-      self.mean_loss = self.alpha*self.loss_mle + (1-self.alpha) * self.loss_rl
+      self.mean_loss = self.loss_alpha*self.loss_mle + (1-self.loss_alpha) * self.loss_rl
 
     tvars = tf.trainable_variables()
     grads, _ = tf.clip_by_global_norm(tf.gradients(self.mean_loss, tvars), self.grad_clip)
@@ -335,7 +338,7 @@ class SeqUnit(object):
     return pred_tokens, atts
 
 
-  def decoder_beam(self, initial_state, beam_size):
+  def decoder_beam(self, initial_state, beam_size, lp_alpha):
 
     def beam_init():
       # return beam_seqs_1 beam_probs_1 cand_seqs_1 cand_prob_1 next_states time
@@ -346,18 +349,19 @@ class SeqUnit(object):
       cand_seqs_0 = tf.constant([[self.start_token]])
       cand_probs_0 = tf.constant([-3e38])
 
-      beam_seqs_0._shape = tf.TensorShape((None, None))
-      beam_probs_0._shape = tf.TensorShape((None,))
-      cand_seqs_0._shape = tf.TensorShape((None, None))
-      cand_probs_0._shape = tf.TensorShape((None,))
+      beam_seqs_0.set_shape((None, None))
+      beam_probs_0.set_shape((None,))
+      cand_seqs_0.set_shape((None, None))
+      cand_probs_0.set_shape((None,))
 
       inputs = [self.start_token]
       x_t = tf.nn.embedding_lookup(self.embedding, inputs)
       print(x_t.get_shape().as_list())
       o_t, s_nt = self.dec_lstm(x_t, initial_state)
-      o_t, w_t = self.att_layer(o_t)
+      o_t, w_t = self.att_layer(o_t) # attention weights
       o_t = self.dec_out(o_t)
       print(s_nt[0].get_shape().as_list())
+      print(w_t.get_shape().as_list())
       # initial_state = tf.reshape(initial_state, [1,-1])
       logprobs2d = tf.nn.log_softmax(o_t)
       total_probs = logprobs2d + tf.reshape(beam_probs_0, [-1, 1])
@@ -385,7 +389,7 @@ class SeqUnit(object):
 
       EOS_probs = tf.slice(total_probs, [0, self.stop_token], [beam_size, 1])
       new_cand_probs = tf.concat([cand_probs_0, tf.reshape(EOS_probs, [-1])], 0)
-      cand_k = tf.minimum(tf.size(new_cand_probs), self.beam_size)
+      cand_k = tf.minimum(tf.size(new_cand_probs), beam_size)
       next_cand_probs, next_cand_indices = tf.nn.top_k(new_cand_probs, k=cand_k)
       next_cand_seqs = tf.gather(new_cand_seqs, next_cand_indices)
 
@@ -393,18 +397,18 @@ class SeqUnit(object):
                          [beam_size, self.hidden_size])
       part_state_1 = tf.reshape(tf.stack([s_nt[1]]*beam_size),
                          [beam_size, self.hidden_size])
-      part_state_0._shape = tf.TensorShape((None, None))
-      part_state_1._shape = tf.TensorShape((None, None))
+      part_state_0.set_shape((None, None))
+      part_state_1.set_shape((None, None))
       next_states = (part_state_0, part_state_1)
       print(next_states[0].get_shape().as_list())
       return next_beam_seqs, next_beam_probs, next_cand_seqs, next_cand_probs, next_states, time_1
 
     beam_seqs_1, beam_probs_1, cand_seqs_1, cand_probs_1, states_1, time_1 = beam_init()
-    beam_seqs_1._shape  = tf.TensorShape((None, None))
-    beam_probs_1._shape = tf.TensorShape((None,))
-    cand_seqs_1._shape  = tf.TensorShape((None, None))
-    cand_probs_1._shape = tf.TensorShape((None,))
-    # states_1._shape = tf.TensorShape((2, None, self.hidden_size))
+    beam_seqs_1.set_shape((None, None))
+    beam_probs_1.set_shape((None,))
+    cand_seqs_1.set_shape((None, None))
+    cand_probs_1.set_shape((None,))
+    # states_1.set_shape((2, None, self.hidden_size))
     def beam_step(beam_seqs, beam_probs, cand_seqs, cand_probs, states, time):
       '''
       beam_seqs : [beam_size, time]
@@ -427,13 +431,19 @@ class SeqUnit(object):
       total_probs_noEOS = tf.concat([tf.slice(total_probs, [0, 0], [beam_size, self.stop_token]),
                                      tf.tile([[-3e38]], [beam_size, 1]),
                                      tf.slice(total_probs, [0, self.stop_token + 1],
-                                              [beam_size,self.target_vocab- self.stop_token - 1])
+                                              [beam_size,self.target_vocab - self.stop_token - 1])
                                      ], 1)
       print(total_probs_noEOS.get_shape().as_list())
       flat_total_probs = tf.reshape(total_probs_noEOS, [-1])
       print(flat_total_probs.get_shape().as_list())
 
       beam_k = tf.minimum(tf.size(flat_total_probs), beam_size)
+
+      # length_penalty = tf.pow(tf.cast(time, tf.float32), lp_alpha)
+      # flat_total_probs_normalized = flat_total_probs / length_penalty
+      # next_beam_probs_normalized, top_indices = tf.nn.top_k(flat_total_probs_normalized, k=beam_k)
+      # next_beam_probs = next_beam_probs_normalized * length_penalty
+
       next_beam_probs, top_indices = tf.nn.top_k(flat_total_probs, k=beam_k)
       print(next_beam_probs.get_shape().as_list())
 
@@ -445,15 +455,17 @@ class SeqUnit(object):
                     tf.reshape(next_mods, [-1, 1])], 1)
       next_states = (tf.gather(s_nt[0], next_bases), tf.gather(s_nt[1], next_bases))
       print(next_beam_seqs.get_shape().as_list())
+      next_beam_seqs.set_shape((None, None))
 
       cand_seqs_pad = tf.pad(cand_seqs, [[0, 0], [0, 1]])
       beam_seqs_EOS = tf.pad(beam_seqs, [[0, 0], [0, 1]])
       new_cand_seqs = tf.concat([cand_seqs_pad, beam_seqs_EOS], 0)
       print(new_cand_seqs.get_shape().as_list())
+      new_cand_seqs.set_shape((None, None))
 
       EOS_probs = tf.slice(total_probs, [0, self.stop_token], [beam_size, 1])
       new_cand_probs = tf.concat([cand_probs, tf.reshape(EOS_probs, [-1])], 0)
-      cand_k = tf.minimum(tf.size(new_cand_probs), self.beam_size)
+      cand_k = tf.minimum(tf.size(new_cand_probs), beam_size)
       next_cand_probs, next_cand_indices = tf.nn.top_k(new_cand_probs, k=cand_k)
       next_cand_seqs = tf.gather(new_cand_seqs, next_cand_indices)
 
@@ -461,18 +473,30 @@ class SeqUnit(object):
 
     def beam_cond(beam_probs, beam_seqs, cand_probs, cand_seqs, state, time):
       length = (tf.reduce_max(beam_probs) >= tf.reduce_min(cand_probs))
-      return tf.logical_and(length, tf.less(time, 60) )
+      return tf.logical_and(length, tf.less(time, 60))
       # return tf.less(time, 18)
 
     loop_vars = [beam_seqs_1, beam_probs_1, cand_seqs_1, cand_probs_1, states_1, time_1]
-    ret_vars = tf.while_loop(cond=beam_cond, body=beam_step,
-                 loop_vars=loop_vars, back_prop=False)
+    ret_vars = tf.while_loop(
+      cond=beam_cond,
+      body=beam_step,
+      loop_vars=loop_vars,
+      shape_invariants=[
+        tf.TensorShape([None, None]),
+        beam_probs_1.get_shape(),
+        tf.TensorShape([None, None]),
+        cand_probs_1.get_shape(),
+        (tf.TensorShape([None, None]), tf.TensorShape([None, None])),
+        time_1.get_shape()
+      ],
+      back_prop=False)
     beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all, _, time_all = ret_vars
 
     return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
-  def train(self, x, sess, train_box_val, bc, rl=False, vocab=None):
-    return self.train_rl(x, sess, train_box_val, bc, vocab=vocab) if rl else self.train_mle(x, sess)
+  def train(self, x, sess, train_box_val, bc, rl=False, vocab=None, neg=False, discount=0.0):
+    return self.train_rl(x, sess, train_box_val, bc, vocab=vocab, neg=neg, discount=discount) if rl \
+      else self.train_mle(x, sess)
 
   def train_mle(self, x, sess):
     loss,  _ = sess.run([self.mean_loss, self.train_op],
@@ -486,7 +510,7 @@ class SeqUnit(object):
                  self.decoder_output: x['dec_out']})
     return loss
 
-  def train_rl(self, batch_data, sess, train_box_val, bc, vocab=None):
+  def train_rl(self, batch_data, sess, train_box_val, bc, vocab=None, neg=False, discount=0.0):
     # start_time = time.time()
 
     if vocab is None:
@@ -554,7 +578,7 @@ class SeqUnit(object):
     # print(dec_in_sampled.shape)
     assert dec_in_sampled.shape == unkmask_list.shape
 
-    rewards = get_reward(train_box_batch, real_sum_list, max_summary_len, bc)
+    rewards = get_reward(train_box_batch, real_sum_list, max_summary_len, bc, neg=neg, discount=discount)
     # print(rewards)
 
     # cost_time = time.time() - start_time
@@ -569,13 +593,11 @@ class SeqUnit(object):
                  self.encoder_len:    batch_data['enc_len'],
                  self.decoder_len: 	  batch_data['dec_len'],
                  self.decoder_output: batch_data['dec_out'],
-
                  self.decoder_input_sampled: dec_in_sampled,
                  self.decoder_len_sampled: summary_len,
                  self.decoder_output_sampled: dec_out_sampled,
                  self.rewards: rewards,
                  })
-
 
     return loss, loss_mle, loss_rl
 

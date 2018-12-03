@@ -1,5 +1,6 @@
 from __future__ import unicode_literals
 import spacy, sys
+import scipy.signal as signal
 import numpy as np
 nlp = spacy.load('en', disable=['tagger', 'parser', 'ner', 'tokenizer'])
 tokenization_to_bracket = {'-lrb-': '(', '-rrb-': ')', '-lcb-': '{', '-rcb-': '}', '-lsb-': '[', '-rsb-': ']', }
@@ -9,13 +10,13 @@ def convert_back_to_brackets(input_str):
         input_str = input_str.replace(k, v)
     return input_str
 
-POS=1
-NEU=0
-NEG=0
-
-def get_reward(train_box_batch, real_sum_list, max_summary_len, bert_server):
+def get_reward(train_box_batch, real_sum_list, max_summary_len, bert_server, neg=False, discount=0.0):
 
     # predicted in + UNK --> +1
+
+    POS = 2
+    NEU = 1
+    NEG = 0
 
     reward_matrix = []
 
@@ -35,6 +36,29 @@ def get_reward(train_box_batch, real_sum_list, max_summary_len, bert_server):
             # print(has_lemma)
             return POS if has_token or has_lemma else NEG
 
+    def _discounted_cumulative_reward_v1(rewards, discount=0.9):
+        """unused"""
+        rewards = np.array(rewards, dtype=np.float32)
+        future_cumulative_reward = 0
+        cumulative_rewards = np.empty_like(rewards)
+        for i in range(len(rewards) - 1, -1, -1):
+            cumulative_rewards[i] = rewards[i] + discount * future_cumulative_reward
+            future_cumulative_reward = cumulative_rewards[i]
+        return cumulative_rewards
+
+    def _discounted_cumulative_reward_v2(rewards, discount=0.9):
+
+        """
+        C[i] = R[i] + discount * C[i+1]
+        signal.lfilter(b, a, x, axis=-1, zi=None)
+        a[0]*y[n] = b[0]*x[n] + b[1]*x[n-1] + ... + b[M]*x[n-M]
+                              - a[1]*y[n-1] - ... - a[N]*y[n-N]
+        """
+        r = rewards[::-1]
+        a = [1, -discount]
+        b = [1]
+        y = signal.lfilter(b, a, x=r)
+        return y[::-1]
 
     for batch, (labels, binary_switch) in enumerate(zip(result, mask)):
         train_box = [x.decode('utf-8') for x in train_box_batch[batch]]
@@ -50,17 +74,22 @@ def get_reward(train_box_batch, real_sum_list, max_summary_len, bert_server):
         # print(labels)
         # print(binary_switch)
 
-        reward = [_check_in_box(l, tk, lm, box_dict, box_lemma_dict)
+        rewards = [_check_in_box(l, tk, lm, box_dict, box_lemma_dict)
                   for l, tk, lm in zip(binary_labels, sampled_tokens, sampled_lemmas)]
         # print(train_box)
         # print(box_lemmas)
         # print(sampled_tokens)
         # print(sampled_lemmas)
         # print(binary_labels)
-        # print(reward)
+        # print(rewards)
+        if discount > 0:
+            discounted_rewards = _discounted_cumulative_reward_v2(rewards)
+            # print(len(discounted_rewards))
+            reward_matrix.append(discounted_rewards)
+        else:
+            reward_matrix.append(rewards)
+    reward_matrix = [np.pad(ids, (0, max_summary_len+1 - len(ids)), 'constant') for ids in reward_matrix]
 
-        reward_matrix.append(reward)
-
-    reward_matrix = np.array([ids + [0] * (max_summary_len+1 - len(ids)) for ids in reward_matrix], dtype=np.float32)
+    reward_matrix = np.array(reward_matrix, dtype=np.float32)
 
     return reward_matrix

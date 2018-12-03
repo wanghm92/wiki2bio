@@ -4,7 +4,7 @@
 # @Author  : Tianyu Liu
 from __future__ import print_function
 
-import sys, os, time, logging, json, tqdm, io, subprocess
+import sys, os, time, logging, json, tqdm, io, subprocess, math
 import tensorflow as tf
 import numpy as np
 from SeqUnit import *
@@ -22,7 +22,7 @@ bc = BertClient()
 last_best = 0.0
 file_paths = {}
 
-suffix='data'
+suffix='small'
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 
@@ -39,10 +39,14 @@ tf.app.flags.DEFINE_integer("target_vocab", 20003, 'vocabulary size')
 tf.app.flags.DEFINE_integer("report", 5000, 'report valid results after some steps')
 tf.app.flags.DEFINE_integer("max_to_keep", 5, 'maximum number of checkpoints to save')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003, 'learning rate')
+
 tf.app.flags.DEFINE_float("alpha", 0.9, 'percentage of MLE loss')
+tf.app.flags.DEFINE_float("discount", 0.0, 'discount factor for cummulative rewards, default: not use')
+tf.app.flags.DEFINE_integer("beam", 1, "width of beam search")
+tf.app.flags.DEFINE_boolean("rl", False, 'whether to add policy gradient')
+tf.app.flags.DEFINE_boolean("neg", False, 'whether to use negative rewards')
 
 tf.app.flags.DEFINE_boolean("load", False, 'whether to load model parameters')
-tf.app.flags.DEFINE_boolean("rl", False, 'whether to add policy gradient')
 tf.app.flags.DEFINE_boolean("rouge", False, 'whether to evaluate on ROUGE for validation')
 tf.app.flags.DEFINE_integer("cnt", 0, 'directory k to load model from')
 tf.app.flags.DEFINE_integer("limits", 0, 'max data set size')
@@ -143,14 +147,15 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
   for e in range(FLAGS.epoch):
     L.info('Training Epoch --%2d--\n'%e)
     for x in dataloader.batch_iter(trainset, FLAGS.batch_size, True):
-      model_returns = model.train(x, sess, train_box_val, bc, rl=rl, vocab=v)
+      model_returns = model.train(x, sess, train_box_val, bc, rl=rl,
+                                  vocab=v, neg=FLAGS.neg, discount=FLAGS.discount)
       if rl:
         loss_mean, loss_mle, loss_rl = model_returns
+        loss_mle_sum += loss_mle
+        loss_rl_sum += loss_rl
       else:
         loss_mean = model_returns
       loss += loss_mean
-      loss_mle_sum += loss_mle
-      loss_rl_sum += loss_rl
       k += 1
       progress_bar(k%FLAGS.report, FLAGS.report)
       if (k % FLAGS.report == 0):
@@ -206,6 +211,50 @@ def bleu_score(labels_file, predictions_path):
 
 def evaluate(*args):
   return evaluate_both(*args) if FLAGS.rouge else evaluate_bleu(*args)
+
+def evaluate_beam(sess, dataloader, model, ksave_dir, mode='valid', vocab=None, beam_size=1):
+  L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
+  if mode == 'valid':
+    texts_path = valid_path
+    gold_path = gold_path_valid
+    evalset = dataloader.dev_set
+  else:
+    texts_path = test_path
+    gold_path = gold_path_test
+    evalset = dataloader.test_set
+
+  # for copy words from the infoboxes
+  texts = open(texts_path, 'r').read().strip().split('\n')
+  texts = [list(t.strip().split()) for t in texts]
+
+  counter = 0
+  data_size = len(evalset[0])
+  L.info('Evaluating by samples ...')
+
+  all_summary = {k: v for k, v in zip(range(1,beam_size+1), [[] for _ in range(1,beam_size+1)])}
+
+  for x in dataloader.batch_iter(evalset, 1, False):
+    counter += 1
+
+    beam_seqs_all, beam_probs_all, beam_predictions, cand_probs_all = model.generate_beam(x, sess)
+    beam_predictions = beam_predictions.tolist()
+
+    real_tokens = [[token_id for token_id in pred[1:] if token_id > 0] for pred in beam_predictions]
+
+    for beam, summary in enumerate(real_tokens, start=1):
+      summary = [str(vocab.id2word(token_id)) for token_id in summary]
+      all_summary[beam].append(summary)
+
+    progress_bar(counter, data_size)
+
+  nocopy_result = []
+  for beam in range(1,beam_size+1):
+    write_word(all_summary[beam], ksave_dir, mode + "_summary_unk.beam.{}.txt".format(beam))
+    L.info('Calculating BLEU for beam #{}'.format(beam))
+    bleu_unk = bleu_score(gold_path, ksave_dir + mode + "_summary_unk.beam.{}.txt".format(beam))
+    nocopy_result.append("without copy BLEU for beam #%d: %.4f\n"%(beam, bleu_unk))
+  nocopy_result = ''.join(nocopy_result)
+  return nocopy_result, bleu_unk, 0.0
 
 def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
   L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
@@ -359,8 +408,13 @@ def evaluate_both(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
   return result, bleu_unk, bleu_copy
 
 
-def test(sess, dataloader, model, saver):
-  result, _, _ = evaluate(sess, dataloader, model, save_dir, 'test')
+def test(sess, dataloader, model, saver, beam_size=FLAGS.beam):
+  print("beam_size={}".format(beam_size))
+  v = Vocab()
+  if beam_size > 0:
+    result, _, _ = evaluate_beam(sess, dataloader, model, save_dir, 'test', vocab=v, beam_size=beam_size)
+  else:
+    result, _, _ = evaluate(sess, dataloader, model, save_dir, 'test', v)
   print(result)
 
 def main():
@@ -379,7 +433,8 @@ def main():
             fgate_enc=FLAGS.fgate_encoder, dual_att=FLAGS.dual_attention,
             decoder_add_pos=FLAGS.decoder_pos,
             encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
-            rl=FLAGS.rl, alpha=FLAGS.alpha)
+            rl=FLAGS.rl, loss_alpha=FLAGS.alpha,
+            beam_size=FLAGS.beam)
     sess.run(tf.global_variables_initializer())
     saver = tf.train.Saver(max_to_keep=1000)
 

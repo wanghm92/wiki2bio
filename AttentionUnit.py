@@ -29,7 +29,7 @@ class AttentionWrapper(object):
         phi_hs2d = tf.tanh(tf.nn.xw_plus_b(hs2d, self.Wh, self.bh))
         self.phi_hs = tf.reshape(phi_hs2d, tf.shape(self.hs))
 
-    def __call__(self, x, finished = None):
+    def __call__(self, x, finished=None):
         gamma_h = tf.tanh(tf.nn.xw_plus_b(x, self.Ws, self.bs))
         weights = tf.reduce_sum(self.phi_hs * gamma_h, axis=2, keep_dims=True)
         weights = tf.exp(weights - tf.reduce_max(weights, axis=0, keep_dims=True))
