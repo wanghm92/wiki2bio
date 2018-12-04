@@ -14,7 +14,7 @@ def get_reward(train_box_batch, real_sum_list, max_summary_len, bert_server, neg
 
     # predicted in + UNK --> +1
 
-    POS = 2
+    POS = 1.5
     NEU = 1
     NEG = 0
 
@@ -76,6 +76,7 @@ def get_reward(train_box_batch, real_sum_list, max_summary_len, bert_server, neg
 
         rewards = [_check_in_box(l, tk, lm, box_dict, box_lemma_dict)
                   for l, tk, lm in zip(binary_labels, sampled_tokens, sampled_lemmas)]
+        rewards.append(NEU) # for eos
         # print(train_box)
         # print(box_lemmas)
         # print(sampled_tokens)
@@ -88,7 +89,8 @@ def get_reward(train_box_batch, real_sum_list, max_summary_len, bert_server, neg
             reward_matrix.append(discounted_rewards)
         else:
             reward_matrix.append(rewards)
-    reward_matrix = [np.pad(ids, (0, max_summary_len+1 - len(ids)), 'constant') for ids in reward_matrix]
+
+    reward_matrix = [np.pad(ids, (0, max_summary_len + 1 - len(ids)), 'constant') for ids in reward_matrix]
 
     reward_matrix = np.array(reward_matrix, dtype=np.float32)
 

@@ -15,6 +15,8 @@ from OutputUnit import OutputUnit
 from reward import get_reward
 import numpy as np
 
+POS = 1.5
+
 
 class SeqUnit(object):
   def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab,field_vocab, position_vocab,
@@ -548,12 +550,14 @@ class SeqUnit(object):
 
           real_sum.append(sub)
           marked_sum.append("**" + str(sub) + "**")
-          unk_mask.append(int(sub_id != 3))
+          if sub_id == 3:
+            unkmask_list.append((batch, idx))
+          # unk_mask.append(int(sub_id != 3))
           real_ids.append(sub_id)
         else:
           real_sum.append(vocab.id2word(tid))
           marked_sum.append(vocab.id2word(tid))
-          unk_mask.append(1)
+          # unk_mask.append(1)
           real_ids.append(tid)
 
       # print(marked_sum)
@@ -562,24 +566,26 @@ class SeqUnit(object):
       # print('-'*50)
       real_sum_list.append([x for x in real_sum])
       marked_sum_list.append([x for x in marked_sum])
-      unkmask_list.append(unk_mask)
+      # unkmask_list.append(unk_mask)
       real_ids_list.append(real_ids)
 
       batch += 1
 
     summary_len = np.array(summary_len, dtype=np.float32)
     # print(summary_len)
-    max_summary_len = max([len(x) for x in unkmask_list]) # max_summary_len = predictions.shape()[-1] - 1, eos takes one
+    max_summary_len = max([len(x) for x in real_ids_list]) # max_summary_len = predictions.shape()[-1] - 1, eos takes one
     # print(max_summary_len)
-    unkmask_list = np.array([mask + [0] * (max_summary_len - len(mask)) for mask in unkmask_list], dtype=np.float32)
+    # unkmask_list = np.array([mask + [0] * (max_summary_len - len(mask)) for mask in unkmask_list], dtype=np.float32)
     dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
     dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
 
     # print(dec_in_sampled.shape)
-    assert dec_in_sampled.shape == unkmask_list.shape
+    # assert dec_in_sampled.shape == unkmask_list.shape
 
     rewards = get_reward(train_box_batch, real_sum_list, max_summary_len, bc, neg=neg, discount=discount)
-    # print(rewards)
+    if unkmask_list:
+      for i, j in unkmask_list:
+        rewards[i][j] = 1.0
 
     # cost_time = time.time() - start_time
     # print("prepare time = %.3f" % (cost_time))
