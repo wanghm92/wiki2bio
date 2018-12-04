@@ -347,35 +347,34 @@ class SeqUnit(object):
     batch_size  = tf.shape(self.encoder_input)[0]
     encoder_len = tf.shape(self.encoder_input)[1]
 
+    sample_shape = tf.constant(1, dtype=tf.int32)
     time 	= tf.constant(0, dtype=tf.int32)
     h0 		= initial_state
     f0 		= tf.zeros([batch_size], dtype=tf.bool)
-    x0 		= tf.nn.embedding_lookup(self.embedding, tf.fill([batch_size], self.start_token))
-    # emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
-    pred_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
+    t0    = tf.fill([batch_size], self.start_token)
+    x0 		= tf.nn.embedding_lookup(self.embedding, t0)
+    pred_ta = tf.TensorArray(dtype=tf.int32, dynamic_size=True, size=0)
     att_ta 	= tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
 
-    def loop_fn(t, x_t, s_t, pred_ta, att_ta, finished):
+    def loop_fn(t, x_t, s_t, pred_ta, att_ta, finished, prev_token):
       o_t, s_nt = self.dec_lstm(x_t, s_t, finished)
       o_t, w_t = self.att_layer(o_t)
       o_t = self.dec_out(o_t, finished)
-      # emit_ta = emit_ta.write(t, o_t)
       att_ta = att_ta.write(t, w_t)
       sampler = tf.contrib.distributions.Categorical(logits=o_t)
-      next_token = sampler.sample()
-      pred_ta.write(t, next_token)
+      next_token = sampler.sample(sample_shape=sample_shape)
+      next_token = tf.squeeze(next_token, 0)
+      pred_ta = pred_ta.write(t, next_token)
       x_nt = tf.nn.embedding_lookup(self.embedding, next_token)
       finished = tf.logical_or(finished, tf.equal(next_token, self.stop_token))
       finished = tf.logical_or(finished, tf.greater_equal(t, self.max_length))
-      return t+1, x_nt, s_nt, pred_ta, att_ta, finished
+      return t+1, x_nt, s_nt, pred_ta, att_ta, finished, next_token
 
-    _, _, state, pred_ta, att_ta, _ = tf.while_loop(
-      cond=lambda _1, _2, _3, _4, _5, finished:tf.logical_not(tf.reduce_all(finished)),
+    _, _, state, pred_ta, att_ta, _, next_token = tf.while_loop(
+      cond=lambda _1, _2, _3, _4, _5, finished, _6:tf.logical_not(tf.reduce_all(finished)),
       body=loop_fn,
-      loop_vars=(time, x0, h0, pred_ta, att_ta, f0))
+      loop_vars=(time, x0, h0, pred_ta, att_ta, f0, t0))
 
-    # outputs = tf.transpose(emit_ta.stack(), [1,0,2])
-    # pred_tokens = tf.argmax(outputs, 2)
     pred_tokens = tf.transpose(pred_ta.stack(), [1,0])
     atts = att_ta.stack()
     return pred_tokens, atts
@@ -536,8 +535,8 @@ class SeqUnit(object):
 
     return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
-  def train(self, x, sess, train_box_val, bc, rl=False, vocab=None, neg=False, discount=0.0):
-    return self.train_rl(x, sess, train_box_val, bc, vocab=vocab, neg=neg, discount=discount) if rl \
+  def train(self, x, sess, train_box_val, bc, rl=False, vocab=None, neg=False, discount=0.0, sampling=False):
+    return self.train_rl(x, sess, train_box_val, bc, vocab=vocab, neg=neg, discount=discount, sampling=sampling) if rl \
       else self.train_mle(x, sess)
 
   def train_mle(self, x, sess):
@@ -552,7 +551,7 @@ class SeqUnit(object):
                  self.decoder_output: x['dec_out']})
     return loss
 
-  def train_rl(self, batch_data, sess, train_box_val, bc, vocab=None, neg=False, discount=0.0):
+  def train_rl(self, batch_data, sess, train_box_val, bc, vocab=None, neg=False, discount=0.0, sampling=False):
     # start_time = time.time()
 
     if vocab is None:
@@ -564,9 +563,11 @@ class SeqUnit(object):
     train_box_batch = [train_box_val[i] for i in sample_indices]
 
     '''predictions: [batch, length_decoder], atts: [length_decoder, length_encoder, batch]'''
-    prediction_ids, atts = self.generate(batch_data, sess)
+    prediction_ids, atts = self.generate(batch_data, sess, sampling=sampling)
     atts = np.squeeze(atts)
-
+    print(prediction_ids)
+    print(prediction_ids.shape)
+    print(atts.shape)
     batch = 0
     real_sum_list, summary_len, real_ids_list = [], [], []
     for pred in np.array(prediction_ids):

@@ -8,7 +8,7 @@ chencherry = SmoothingFunction().method1
 nlp = spacy.load('en', disable=['tagger', 'parser', 'ner', 'tokenizer'])
 tokenization_to_bracket = {'-lrb-': '(', '-rrb-': ')', '-lcb-': '{', '-rcb-': '}', '-lsb-': '[', '-rsb-': ']', }
 
-def convert_back_to_brackets(input_str):
+def _convert_back_to_brackets(input_str):
     for k, v in tokenization_to_bracket.items():
         input_str = input_str.replace(k, v)
     return input_str
@@ -23,7 +23,7 @@ def get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len
 
     reward_matrix = []
 
-    pred_sentences = [' '.join([convert_back_to_brackets(y.decode('utf-8')) for y in x]) for x in real_sum_list]
+    pred_sentences = [' '.join([_convert_back_to_brackets(y.decode('utf-8')) for y in x]) for x in real_sum_list]
     # print(pred_sentences)
     result, mask = bert_server.encode(pred_sentences) # [batch, 64]
     assert result.shape == mask.shape
