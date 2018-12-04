@@ -2,6 +2,8 @@ from __future__ import unicode_literals
 import spacy, sys
 import scipy.signal as signal
 import numpy as np
+from nltk.translate.bleu_score import sentence_bleu
+
 nlp = spacy.load('en', disable=['tagger', 'parser', 'ner', 'tokenizer'])
 tokenization_to_bracket = {'-lrb-': '(', '-rrb-': ')', '-lcb-': '{', '-rcb-': '}', '-lsb-': '[', '-rsb-': ']', }
 
@@ -10,7 +12,7 @@ def convert_back_to_brackets(input_str):
         input_str = input_str.replace(k, v)
     return input_str
 
-def get_reward(train_box_batch, real_sum_list, max_summary_len, bert_server, neg=False, discount=0.0):
+def get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len, bert_server, neg=False, discount=0.0):
 
     # predicted in + UNK --> +1
 
@@ -95,3 +97,10 @@ def get_reward(train_box_batch, real_sum_list, max_summary_len, bert_server, neg
     reward_matrix = np.array(reward_matrix, dtype=np.float32)
 
     return reward_matrix
+
+def get_reward_bleu(gold_summary_tks, real_sum_list):
+
+    print(gold_summary_tks)
+    print(real_sum_list)
+    sys.exit(0)
+    return[sentence_bleu(r,s) for r,s in zip(gold_summary_tks, real_sum_list)]

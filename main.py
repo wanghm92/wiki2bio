@@ -22,7 +22,7 @@ bc = BertClient()
 last_best = 0.0
 file_paths = {}
 
-suffix='data'
+suffix='small'
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 
@@ -53,6 +53,7 @@ tf.app.flags.DEFINE_integer("limits", 0, 'max data set size')
 tf.app.flags.DEFINE_string("mode", 'train', 'train or test')
 tf.app.flags.DEFINE_string("prefix", 'temp', 'name your model')
 tf.app.flags.DEFINE_string("dir", prepro_out, 'data set directory')
+tf.app.flags.DEFINE_string("dir_ori", prepro_in, 'data set directory')
 
 tf.app.flags.DEFINE_boolean("dual_attention",True,'dual attention layer or normal attention')
 tf.app.flags.DEFINE_boolean("fgate_encoder", False,'add field gate in encoder lstm')
@@ -200,8 +201,8 @@ def bleu_score(labels_file, predictions_path):
             stderr=subprocess.STDOUT)
         bleu_out = bleu_out.decode("utf-8")
         bleu_score = re.search(r"BLEU = (.+?),", bleu_out).group(1)
-
         return float(bleu_score)
+
     except subprocess.CalledProcessError as error:
       if error.output is not None:
         msg = error.output.strip()
@@ -422,7 +423,7 @@ def main():
   config.gpu_options.allow_growth = True
   with tf.Session(config=config) as sess:
     copy_file(save_file_dir)
-    dataloader = DataLoader(FLAGS.dir, FLAGS.limits)
+    dataloader = DataLoader(FLAGS.dir, FLAGS.dir_ori, FLAGS.limits)
     model = SeqUnit(batch_size=FLAGS.batch_size, hidden_size=FLAGS.hidden_size,
             emb_size=FLAGS.emb_size, field_size=FLAGS.field_size,
             pos_size=FLAGS.pos_size, field_vocab=FLAGS.field_vocab,

@@ -12,10 +12,10 @@ from dualAttentionUnit import dualAttentionWrapper
 from LstmUnit import LstmUnit
 from fgateLstmUnit import fgateLstmUnit
 from OutputUnit import OutputUnit
-from reward import get_reward
+from reward import get_reward, get_reward_bleu
 import numpy as np
 
-POS = 1.5
+# POS = 1.5
 
 
 class SeqUnit(object):
@@ -513,26 +513,25 @@ class SeqUnit(object):
     return loss
 
   def train_rl(self, batch_data, sess, train_box_val, bc, vocab=None, neg=False, discount=0.0):
-    # start_time = time.time()
+    start_time = time.time()
 
     if vocab is None:
       raise ValueError("vocab cannot be None")
 
-    real_sum_list, unk_sum_list, marked_sum_list, unkmask_list, real_ids_list = [], [], [], [], []
-
     box_ids = batch_data['enc_in']
     sample_indices = batch_data['indices']
-
+    gold_summary_tks = batch_data['summaries']
     train_box_batch = [train_box_val[i] for i in sample_indices]
-    prediction_ids, atts = self.generate(batch_data, sess)     # predictions: [batch, length_decoder]
-    atts = np.squeeze(atts)     # atts: [length_decoder, length_encoder, batch]
-    # print(prediction_ids.shape)
-    # print(atts.shape)
+
+    '''predictions: [batch, length_decoder], atts: [length_decoder, length_encoder, batch]'''
+    prediction_ids, atts = self.generate(batch_data, sess)
+    atts = np.squeeze(atts)
 
     batch = 0
-    summary_len = []
+    real_sum_list, summary_len, real_ids_list = [], [], []
     for pred in np.array(prediction_ids):
-      real_sum, marked_sum, unk_mask, real_ids = [], [], [], []
+
+      real_sum, real_ids = [], []
 
       pred = list(pred) # 2 is eos, trim the output to the end of sentence
       if 2 in pred:
@@ -540,8 +539,8 @@ class SeqUnit(object):
 
       summary_len.append(len(pred))
 
+      '''replace UNK with input word with highest attention weight'''
       for idx, tid in enumerate(pred):
-        # replace UNK with input word with highest attention weight
         if tid == 3:
           box_length = len(train_box_batch[batch])
           max_att = np.argmax(atts[idx, :box_length, batch])
@@ -549,46 +548,26 @@ class SeqUnit(object):
           sub = train_box_batch[batch][max_att]
 
           real_sum.append(sub)
-          marked_sum.append("**" + str(sub) + "**")
-          if sub_id == 3:
-            unkmask_list.append((batch, idx))
-          # unk_mask.append(int(sub_id != 3))
           real_ids.append(sub_id)
         else:
           real_sum.append(vocab.id2word(tid))
-          marked_sum.append(vocab.id2word(tid))
-          # unk_mask.append(1)
           real_ids.append(tid)
 
-      # print(marked_sum)
-      # print(real_ids)
-      # print(unk_mask)
-      # print('-'*50)
       real_sum_list.append([x for x in real_sum])
-      marked_sum_list.append([x for x in marked_sum])
-      # unkmask_list.append(unk_mask)
       real_ids_list.append(real_ids)
 
       batch += 1
 
     summary_len = np.array(summary_len, dtype=np.float32)
-    # print(summary_len)
-    max_summary_len = max([len(x) for x in real_ids_list]) # max_summary_len = predictions.shape()[-1] - 1, eos takes one
-    # print(max_summary_len)
-    # unkmask_list = np.array([mask + [0] * (max_summary_len - len(mask)) for mask in unkmask_list], dtype=np.float32)
+    max_summary_len = max([len(x) for x in real_ids_list])
     dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
     dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
 
-    # print(dec_in_sampled.shape)
-    # assert dec_in_sampled.shape == unkmask_list.shape
+    # rewards = get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len, bc, neg=neg, discount=discount)
+    rewards = get_reward_bleu(gold_summary_tks, real_sum_list)
 
-    rewards = get_reward(train_box_batch, real_sum_list, max_summary_len, bc, neg=neg, discount=discount)
-    if unkmask_list:
-      for i, j in unkmask_list:
-        rewards[i][j] = 1.0
-
-    # cost_time = time.time() - start_time
-    # print("prepare time = %.3f" % (cost_time))
+    cost_time = time.time() - start_time
+    print("prepare time = %.3f" % (cost_time))
 
     loss, loss_mle, loss_rl,  _ = sess.run([self.mean_loss, self.loss_mle, self.loss_rl, self.train_op],
                 {self.encoder_input:  batch_data['enc_in'],
