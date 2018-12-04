@@ -2,7 +2,8 @@ from __future__ import unicode_literals
 import spacy, sys
 import scipy.signal as signal
 import numpy as np
-from nltk.translate.bleu_score import sentence_bleu
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+chencherry = SmoothingFunction().method1
 
 nlp = spacy.load('en', disable=['tagger', 'parser', 'ner', 'tokenizer'])
 tokenization_to_bracket = {'-lrb-': '(', '-rrb-': ')', '-lcb-': '{', '-rcb-': '}', '-lsb-': '[', '-rsb-': ']', }
@@ -99,8 +100,7 @@ def get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len
     return reward_matrix
 
 def get_reward_bleu(gold_summary_tks, real_sum_list):
-
-    print(gold_summary_tks)
-    print(real_sum_list)
-    sys.exit(0)
-    return[sentence_bleu(r,s) for r,s in zip(gold_summary_tks, real_sum_list)]
+    """ BLEU score as reward """
+    return np.array([sentence_bleu([r], s, smoothing_function=chencherry)
+                     for r, s in zip(gold_summary_tks, real_sum_list)],
+                    dtype=np.float32)

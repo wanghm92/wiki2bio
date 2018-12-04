@@ -15,21 +15,21 @@ class DataLoader(object):
                             data_dir + '/train/train.box.lab.id',
                             data_dir + '/train/train.box.pos',
                             data_dir + '/train/train.box.rpos',
-                            data_dir_ori + 'train.summary']
+                            data_dir_ori + '/train.summary']
 
     self.test_data_path  = [data_dir + '/test/test.summary.id',
                             data_dir + '/test/test.box.val.id',
                             data_dir + '/test/test.box.lab.id',
                             data_dir + '/test/test.box.pos',
                             data_dir + '/test/test.box.rpos',
-                            data_dir_ori + 'test.summary']
+                            data_dir_ori + '/test.summary']
 
     self.dev_data_path   = [data_dir + '/valid/valid.summary.id',
                             data_dir + '/valid/valid.box.val.id',
                             data_dir + '/valid/valid.box.lab.id',
                             data_dir + '/valid/valid.box.pos',
                             data_dir + '/valid/valid.box.rpos',
-                            data_dir_ori + 'valid.summary']
+                            data_dir_ori + '/valid.summary']
     self.limits 	  = limits
     self.man_text_len = 100
     start_time 		  = time.time()

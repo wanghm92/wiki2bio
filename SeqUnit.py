@@ -79,7 +79,7 @@ class SeqUnit(object):
       self.decoder_input_sampled = tf.placeholder(tf.int32, [None, None])
       self.decoder_len_sampled  = tf.placeholder(tf.int32, [None])
       self.decoder_output_sampled = tf.placeholder(tf.int32, [None, None])
-      self.rewards = tf.placeholder(tf.float32, [None, None])
+      self.rewards = tf.placeholder(tf.float32, [None, ])
       self.loss_alpha = tf.constant(self.loss_alpha_value, dtype=tf.float32)
 
     with tf.variable_scope(scope_name):
@@ -164,8 +164,11 @@ class SeqUnit(object):
     # ------ decoder for training ------ #
     de_outputs, de_state = self.decoder_t(en_state, self.decoder_embed, self.decoder_len)
 
-    # ------ decoder for testing ------ #
+    # ------ greedy decoder for testing ------ #
     self.g_tokens, self.atts = self.decoder_g(en_state)
+
+    # ------ sampling decoder for testing ------ #
+    self.multinomial_tokens, self.multinomial_atts = self.decoder_s(en_state)
 
     # ------ beam search decoder ------ #
     self.beam_seqs, self.beam_probs, self.cand_seqs, self.cand_probs = self.decoder_beam(en_state, beam_size, lp_alpha)
@@ -181,7 +184,7 @@ class SeqUnit(object):
       neg_log_prob = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=de_outputs_sampled, labels=self.decoder_output_sampled)
       mask_rl = tf.sign(tf.to_float(self.decoder_output_sampled))
       neg_log_prob = mask_rl * neg_log_prob
-      self.loss_rl = tf.reduce_mean(neg_log_prob * self.rewards)  # reward guided loss
+      self.loss_rl = tf.reduce_mean(neg_log_prob * tf.expand_dims(self.rewards, axis=-1))  # reward guided loss
       self.mean_loss = self.loss_alpha*self.loss_mle + (1-self.loss_alpha) * self.loss_rl
 
     tvars = tf.trainable_variables()
@@ -339,6 +342,43 @@ class SeqUnit(object):
     atts = att_ta.stack()
     return pred_tokens, atts
 
+  def decoder_s(self, initial_state):
+    """categorical sampling decoder"""
+    batch_size  = tf.shape(self.encoder_input)[0]
+    encoder_len = tf.shape(self.encoder_input)[1]
+
+    time 	= tf.constant(0, dtype=tf.int32)
+    h0 		= initial_state
+    f0 		= tf.zeros([batch_size], dtype=tf.bool)
+    x0 		= tf.nn.embedding_lookup(self.embedding, tf.fill([batch_size], self.start_token))
+    # emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
+    pred_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
+    att_ta 	= tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
+
+    def loop_fn(t, x_t, s_t, pred_ta, att_ta, finished):
+      o_t, s_nt = self.dec_lstm(x_t, s_t, finished)
+      o_t, w_t = self.att_layer(o_t)
+      o_t = self.dec_out(o_t, finished)
+      # emit_ta = emit_ta.write(t, o_t)
+      att_ta = att_ta.write(t, w_t)
+      sampler = tf.contrib.distributions.Categorical(logits=o_t)
+      next_token = sampler.sample()
+      pred_ta.write(t, next_token)
+      x_nt = tf.nn.embedding_lookup(self.embedding, next_token)
+      finished = tf.logical_or(finished, tf.equal(next_token, self.stop_token))
+      finished = tf.logical_or(finished, tf.greater_equal(t, self.max_length))
+      return t+1, x_nt, s_nt, pred_ta, att_ta, finished
+
+    _, _, state, pred_ta, att_ta, _ = tf.while_loop(
+      cond=lambda _1, _2, _3, _4, _5, finished:tf.logical_not(tf.reduce_all(finished)),
+      body=loop_fn,
+      loop_vars=(time, x0, h0, pred_ta, att_ta, f0))
+
+    # outputs = tf.transpose(emit_ta.stack(), [1,0,2])
+    # pred_tokens = tf.argmax(outputs, 2)
+    pred_tokens = tf.transpose(pred_ta.stack(), [1,0])
+    atts = att_ta.stack()
+    return pred_tokens, atts
 
   def decoder_beam(self, initial_state, beam_size, lp_alpha):
 
@@ -513,7 +553,7 @@ class SeqUnit(object):
     return loss
 
   def train_rl(self, batch_data, sess, train_box_val, bc, vocab=None, neg=False, discount=0.0):
-    start_time = time.time()
+    # start_time = time.time()
 
     if vocab is None:
       raise ValueError("vocab cannot be None")
@@ -565,9 +605,9 @@ class SeqUnit(object):
 
     # rewards = get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len, bc, neg=neg, discount=discount)
     rewards = get_reward_bleu(gold_summary_tks, real_sum_list)
-
-    cost_time = time.time() - start_time
-    print("prepare time = %.3f" % (cost_time))
+    # print(rewards)
+    # cost_time = time.time() - start_time
+    # print("prepare time = %.3f" % (cost_time))
 
     loss, loss_mle, loss_rl,  _ = sess.run([self.mean_loss, self.loss_mle, self.loss_rl, self.train_op],
                 {self.encoder_input:  batch_data['enc_in'],
@@ -586,8 +626,9 @@ class SeqUnit(object):
 
     return loss, loss_mle, loss_rl
 
-  def generate(self, x, sess):
-    predictions, atts = sess.run([self.g_tokens, self.atts],
+  def generate(self, x, sess, sampling=False):
+    ops = [self.g_tokens, self.atts] if not sampling else [self.multinomial_tokens, self.multinomial_atts]
+    predictions, atts = sess.run(ops,
                    {self.encoder_input: x['enc_in'],
                     self.encoder_len:   x['enc_len'],
                     self.encoder_field: x['enc_fd'],
