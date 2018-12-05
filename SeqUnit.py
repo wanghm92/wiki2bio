@@ -535,8 +535,12 @@ class SeqUnit(object):
 
     return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
-  def train(self, x, sess, train_box_val, bc, rl=False, vocab=None, neg=False, discount=0.0, sampling=False):
-    return self.train_rl(x, sess, train_box_val, bc, vocab=vocab, neg=neg, discount=discount, sampling=sampling) if rl \
+  def train(self, x, sess, train_box_val, bc,
+            rl=False, vocab=None, neg=False, discount=0.0,
+            sampling=False, self_critic=False):
+    return self.train_rl(x, sess, train_box_val, bc,
+                         vocab=vocab, neg=neg, discount=discount,
+                         sampling=sampling, self_critic=self_critic) if rl \
       else self.train_mle(x, sess)
 
   def train_mle(self, x, sess):
@@ -551,79 +555,94 @@ class SeqUnit(object):
                  self.decoder_output: x['dec_out']})
     return loss
 
-  def train_rl(self, batch_data, sess, train_box_val, bc, vocab=None, neg=False, discount=0.0, sampling=False):
-    # start_time = time.time()
+  def train_rl(self, batch_data, sess, train_box_val, bc,
+               vocab=None, neg=False, discount=0.0,
+               sampling=False, self_critic=False):
 
+    start_time = time.time()
     if vocab is None:
       raise ValueError("vocab cannot be None")
+    if self_critic:
+      sampling = True
 
     box_ids = batch_data['enc_in']
     sample_indices = batch_data['indices']
     gold_summary_tks = batch_data['summaries']
     train_box_batch = [train_box_val[i] for i in sample_indices]
 
+    def _replace_unk(target_prediction_ids, target_atts):
+      batch = 0
+      target_atts = np.squeeze(target_atts)
+      real_sum_list, summary_len, real_ids_list = [], [], []
+      for pred in np.array(target_prediction_ids):
+
+        real_sum, real_ids = [], []
+
+        pred = list(pred)  # 2 is eos, trim the output to the end of sentence
+        if 2 in pred:
+          pred = pred[:pred.index(2)] if pred[0] != 2 else [2]
+
+        summary_len.append(len(pred))
+
+        '''replace UNK with input word with highest attention weight'''
+        for idx, tid in enumerate(pred):
+          if tid == 3:
+            box_length = len(train_box_batch[batch])
+            max_att = np.argmax(target_atts[idx, :box_length, batch])
+            sub_id = box_ids[batch][max_att]
+            sub = train_box_batch[batch][max_att]
+
+            real_sum.append(sub)
+            real_ids.append(sub_id)
+          else:
+            real_sum.append(vocab.id2word(tid))
+            real_ids.append(tid)
+
+        real_sum_list.append([x for x in real_sum])
+        real_ids_list.append(real_ids)
+
+        batch += 1
+
+      summary_len = np.array(summary_len, dtype=np.float32)
+      max_summary_len = max([len(x) for x in real_ids_list])
+      dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
+      dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list],
+                                 dtype=np.float32)
+
+      return real_sum_list, summary_len, dec_in_sampled, dec_out_sampled
+
     '''predictions: [batch, length_decoder], atts: [length_decoder, length_encoder, batch]'''
     prediction_ids, atts = self.generate(batch_data, sess, sampling=sampling)
-    atts = np.squeeze(atts)
-    print(prediction_ids)
-    print(prediction_ids.shape)
-    print(atts.shape)
-    batch = 0
-    real_sum_list, summary_len, real_ids_list = [], [], []
-    for pred in np.array(prediction_ids):
-
-      real_sum, real_ids = [], []
-
-      pred = list(pred) # 2 is eos, trim the output to the end of sentence
-      if 2 in pred:
-        pred = pred[:pred.index(2)] if pred[0] != 2 else [2]
-
-      summary_len.append(len(pred))
-
-      '''replace UNK with input word with highest attention weight'''
-      for idx, tid in enumerate(pred):
-        if tid == 3:
-          box_length = len(train_box_batch[batch])
-          max_att = np.argmax(atts[idx, :box_length, batch])
-          sub_id = box_ids[batch][max_att]
-          sub = train_box_batch[batch][max_att]
-
-          real_sum.append(sub)
-          real_ids.append(sub_id)
-        else:
-          real_sum.append(vocab.id2word(tid))
-          real_ids.append(tid)
-
-      real_sum_list.append([x for x in real_sum])
-      real_ids_list.append(real_ids)
-
-      batch += 1
-
-    summary_len = np.array(summary_len, dtype=np.float32)
-    max_summary_len = max([len(x) for x in real_ids_list])
-    dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
-    dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
-
-    # rewards = get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len, bc, neg=neg, discount=discount)
+    real_sum_list, summary_len, dec_in_sampled, dec_out_sampled = _replace_unk(prediction_ids, atts)
     rewards = get_reward_bleu(gold_summary_tks, real_sum_list)
+
+    if self_critic:
+      prediction_ids_greedy, atts_greedy = self.generate(batch_data, sess, sampling=False)
+      real_sum_list_greedy, _, _, _ = _replace_unk(prediction_ids_greedy, atts_greedy)
+      baseline_rewards = get_reward_bleu(gold_summary_tks, real_sum_list_greedy)
+      rewards -= baseline_rewards
+
+    # print(baseline_rewards)
     # print(rewards)
     # cost_time = time.time() - start_time
     # print("prepare time = %.3f" % (cost_time))
+    # sys.exit(0)
+    # rewards = get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len, bc, neg=neg, discount=discount)
 
     loss, loss_mle, loss_rl,  _ = sess.run([self.mean_loss, self.loss_mle, self.loss_rl, self.train_op],
-                {self.encoder_input:  batch_data['enc_in'],
-                 self.encoder_field:  batch_data['enc_fd'],
-                 self.encoder_pos:    batch_data['enc_pos'],
-                 self.encoder_rpos:   batch_data['enc_rpos'],
-                 self.decoder_input:  batch_data['dec_in'],
-                 self.encoder_len:    batch_data['enc_len'],
-                 self.decoder_len: 	  batch_data['dec_len'],
-                 self.decoder_output: batch_data['dec_out'],
-                 self.decoder_input_sampled: dec_in_sampled,
-                 self.decoder_len_sampled: summary_len,
-                 self.decoder_output_sampled: dec_out_sampled,
-                 self.rewards: rewards,
-                 })
+                                           {self.encoder_input:  batch_data['enc_in'],
+                                            self.encoder_field:  batch_data['enc_fd'],
+                                            self.encoder_pos:    batch_data['enc_pos'],
+                                            self.encoder_rpos:   batch_data['enc_rpos'],
+                                            self.decoder_input:  batch_data['dec_in'],
+                                            self.encoder_len:    batch_data['enc_len'],
+                                            self.decoder_len: 	  batch_data['dec_len'],
+                                            self.decoder_output: batch_data['dec_out'],
+                                            self.decoder_input_sampled: dec_in_sampled,
+                                            self.decoder_len_sampled: summary_len,
+                                            self.decoder_output_sampled: dec_out_sampled,
+                                            self.rewards: rewards,
+                                            })
 
     return loss, loss_mle, loss_rl
 
