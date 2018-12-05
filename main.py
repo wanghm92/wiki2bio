@@ -22,7 +22,7 @@ bc = None
 last_best = 0.0
 file_paths = {}
 
-suffix='small'
+suffix='data'
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 
@@ -418,7 +418,7 @@ def evaluate_beam(sess, dataloader, model, ksave_dir, mode='valid', vocab=None, 
 def test(sess, dataloader, model, saver, beam_size=FLAGS.beam):
   print("beam_size={}".format(beam_size))
   v = Vocab()
-  if beam_size > 0:
+  if beam_size > 1:
     result, _, _ = evaluate_beam(sess, dataloader, model, save_dir, 'test', vocab=v, beam_size=beam_size)
   else:
     result, _, _ = evaluate(sess, dataloader, model, save_dir, 'test', v)
