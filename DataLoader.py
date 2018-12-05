@@ -16,6 +16,7 @@ class DataLoader(object):
                             data_dir + '/train/train.box.lab.id',
                             data_dir + '/train/train.box.pos',
                             data_dir + '/train/train.box.rpos',
+                            data_dir + '/train/train.coverage',
                             data_dir_ori + '/train.summary']
 
     self.test_data_path  = [data_dir + '/test/test.summary.id',
@@ -23,6 +24,7 @@ class DataLoader(object):
                             data_dir + '/test/test.box.lab.id',
                             data_dir + '/test/test.box.pos',
                             data_dir + '/test/test.box.rpos',
+                            data_dir + '/test/test.coverage',
                             data_dir_ori + '/test.summary']
 
     self.dev_data_path   = [data_dir + '/valid/valid.summary.id',
@@ -30,6 +32,7 @@ class DataLoader(object):
                             data_dir + '/valid/valid.box.lab.id',
                             data_dir + '/valid/valid.box.pos',
                             data_dir + '/valid/valid.box.rpos',
+                            data_dir + '/valid/valid.coverage',
                             data_dir_ori + '/valid.summary']
     self.limits 	  = limits
     self.man_text_len = 100
@@ -44,10 +47,11 @@ class DataLoader(object):
     print('Reading datasets consumes %.3f seconds' % (time.time() - start_time))
 
   def load_data(self, path, filter=False):
-    summary_id_path, text_path, field_path, pos_path, rpos_path, summary_tk_path = path
+    summary_id_path, text_path, field_path, pos_path, rpos_path, coverage_path, summary_tk_path = path
 
     summary_ids = open(summary_id_path, 'r').read().strip().split('\n')
     summary_tks = open(summary_tk_path, 'r').read().strip().split('\n')
+    coverage_lbs = open(coverage_path, 'r').read().strip().split('\n')
     texts 	  = open(text_path,    'r').read().strip().split('\n')
     fields 	  = open(field_path,   'r').read().strip().split('\n')
     poses 	  = open(pos_path,     'r').read().strip().split('\n')
@@ -62,31 +66,39 @@ class DataLoader(object):
       rposes 	  = rposes[:self.limits]
 
     if filter:
-      summary_ids_out, texts_out, fields_out, poses_out, rposes_out, summary_tks_out = [], [], [], [], [], []
-      for summary_id, summary_tk, text, field, pos, rpos in zip(summary_ids, summary_tks, texts, fields, poses, rposes):
+      summary_ids_out, texts_out, fields_out, poses_out, rposes_out, coverage_lbs_out, summary_tks_out = [], [], [], [], [], [], []
+
+      for summary_id, summary_tk, coverage_lb, text, field, pos, rpos \
+              in zip(summary_ids, summary_tks, coverage_lbs, texts, fields, poses, rposes):
+
         length = len(summary_id.strip().split(' '))
+
         if (length > MAX or length < MIN):
           continue
-      else:
-        summary_ids_out.append(list(map(int, summary_id.strip().split(' '))))
-        summary_tks_out.append(summary_tk.strip().split(' '))
-        texts_out.append(list(map(int, text.strip().split(' '))))
-        fields_out.append(list(map(int, field.strip().split(' '))))
-        poses_out.append(list(map(int, pos.strip().split(' '))))
-        rposes_out.append(list(map(int, rpos.strip().split(' '))))
+
+        else:
+          summary_ids_out.append(list(map(int, summary_id.strip().split(' '))))
+          summary_tks_out.append(summary_tk.strip().split(' '))
+          coverage_lbs_out.append(list(map(int, coverage_lb.strip().split(' '))))
+          texts_out.append(list(map(int, text.strip().split(' '))))
+          fields_out.append(list(map(int, field.strip().split(' '))))
+          poses_out.append(list(map(int, pos.strip().split(' '))))
+          rposes_out.append(list(map(int, rpos.strip().split(' '))))
 
     else:
       summary_ids_out = [list(map(int, summary.strip().split(' '))) for summary in summary_ids]
       summary_tks_out = [summary.strip().split(' ') for summary in summary_tks]
+      coverage_lbs_out = [list(map(int, coverage_lb.strip().split(' '))) for coverage_lb in coverage_lbs]
       texts_out 	  = [list(map(int, text.strip().split(' ')))    for text in texts]
       fields_out	  = [list(map(int, field.strip().split(' ')))   for field in fields]
       poses_out 	  = [list(map(int, pos.strip().split(' ')))     for pos in poses]
       rposes_out 	  = [list(map(int, rpos.strip().split(' ')))    for rpos in rposes]
 
-    return summary_ids_out, texts_out, fields_out, poses_out, rposes_out, summary_tks_out
+    return summary_ids_out, texts_out, fields_out, poses_out, rposes_out, summary_tks_out, coverage_lbs_out
 
   def batch_iter(self, data, batch_size, shuffle=False):
-    summary_ids, texts, fields, poses, rposes, summary_tks = data
+    summary_ids, texts, fields, poses, rposes, summary_tks, coverage_lbs = data
+
     data_size 	= len(summary_ids)
     num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
                           else int(data_size / batch_size) + 1
@@ -101,6 +113,7 @@ class DataLoader(object):
       fields 			= np.array(fields)[indices]
       poses 			= np.array(poses)[indices]
       rposes 			= np.array(rposes)[indices]
+      coverage_lbs = np.array(coverage_lbs)[indices]
 
     for batch_num in range(num_batches):
       start_index 	= batch_num * batch_size
@@ -111,15 +124,19 @@ class DataLoader(object):
       max_text_len 	= max([len(s) for s in texts[start_index:end_index]])
       batch_data 		= {'enc_in': [], 'enc_fd':[], 'enc_pos':[], 'enc_rpos':[],
                        'enc_len':[], 'dec_in':[], 'dec_len':[], 'dec_out': [],
-                       'indices':[], 'summaries':[]}
+                       'indices':[], 'summaries':[], 'coverage_labels':[]}
 
-      for summary_id, text, field, pos, rpos, idxes, summary_tk in zip(summary_ids[start_index:end_index],
-                                                                       texts[start_index:end_index],
-                                                                       fields[start_index:end_index],
-                                                                       poses[start_index:end_index],
-                                                                       rposes[start_index:end_index],
-                                                                       indices[start_index:end_index],
-                                                                       summary_tks[start_index:end_index]):
+      for summary_id, text, field, pos, rpos, idxes, summary_tk, coverage_lb \
+              in zip(summary_ids[start_index:end_index],
+                     texts[start_index:end_index],
+                     fields[start_index:end_index],
+                     poses[start_index:end_index],
+                     rposes[start_index:end_index],
+                     indices[start_index:end_index],
+                     summary_tks[start_index:end_index],
+                     coverage_lbs[start_index:end_index],
+                     ):
+
         summary_len = len(summary_id)
         text_len 	= len(text)
         pos_len 	= len(pos)
@@ -152,6 +169,7 @@ class DataLoader(object):
         batch_data['dec_out'].append(gold)
         batch_data['indices'].append(idxes)
         batch_data['summaries'].append(summary_tk)
+        batch_data['coverage_labels'].append(coverage_lb)
 
       batch_data_np = {}
       for k, v in batch_data.iteritems():

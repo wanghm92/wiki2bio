@@ -16,9 +16,9 @@ from util import *
 from os.path import expanduser
 HOME = expanduser("~")
 sys.path.append('{}/bert_src/bert_as_service'.format(HOME))
-# from service.client import BertClient
-# bc = BertClient()
-bc = None
+from service.client import BertClient
+bc = BertClient()
+# bc = None
 last_best = 0.0
 file_paths = {}
 
@@ -48,6 +48,8 @@ tf.app.flags.DEFINE_boolean("rl", False, 'whether to add policy gradient')
 tf.app.flags.DEFINE_boolean("neg", False, 'whether to use negative rewards')
 tf.app.flags.DEFINE_boolean("sampling", False, 'whether to use multinomial categorical sampling for rl')
 tf.app.flags.DEFINE_boolean("self_critic", False, 'whether to use self-critic')
+tf.app.flags.DEFINE_boolean("bleu_reward", False, 'whether to use bleu as reward value')
+tf.app.flags.DEFINE_boolean("coverage_reward", False, 'whether to use coverage F1 score as rewards')
 
 tf.app.flags.DEFINE_boolean("load", False, 'whether to load model parameters')
 tf.app.flags.DEFINE_boolean("rouge", False, 'whether to evaluate on ROUGE for validation')
@@ -153,7 +155,8 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
     for x in dataloader.batch_iter(trainset, FLAGS.batch_size, shuffle=True):
       model_returns = model.train(x, sess, train_box_val, bc,
                                   rl=rl, vocab=v, neg=FLAGS.neg, discount=FLAGS.discount,
-                                  sampling=FLAGS.sampling, self_critic=FLAGS.self_critic)
+                                  sampling=FLAGS.sampling, self_critic=FLAGS.self_critic,
+                                  bleu_rw=FLAGS.bleu_reward, coverage_rw=FLAGS.coverage_reward)
       if rl:
         loss_mean, loss_mle, loss_rl = model_returns
         loss_mle_sum += loss_mle

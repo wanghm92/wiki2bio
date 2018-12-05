@@ -99,6 +99,51 @@ def get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len
 
     return reward_matrix
 
+
+def get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list, bert_server):
+    pred_token_lists = [[_convert_back_to_brackets(y.decode('utf-8')) for y in x] for x in real_sum_list]
+    pred_sentences = [' '.join(x) for x in pred_token_lists]
+    # print(pred_sentences)
+    result, mask = bert_server.encode(pred_sentences) # [batch, 64]
+    assert result.shape == mask.shape
+
+    rewards = []
+    for batch, (gold, coverage, pred_tokens, labels, binary_switch) \
+            in enumerate(zip(gold_summary_tks, coverage_labels, pred_token_lists, result, mask)):
+
+        binary_labels = [l for l, m in zip(labels, binary_switch) if m == 1]
+        gold_set = dict.fromkeys([x for x, y in zip(gold, coverage) if y == 1])
+
+        num = len(pred_tokens)
+        try:
+            assert len(pred_tokens) == len(binary_labels)
+        except AssertionError:
+            rewards.append(0.0)
+            continue
+
+        true_positive, false_negative, false_positive, true_negative = 0.0, 0.0, 0.0, 0.0
+        for tk, lb in zip(pred_tokens, binary_labels):
+            if lb == 1:
+                if gold_set.has_key(tk):
+                    true_positive += 1.0
+                else:
+                    false_positive += 1.0
+            else:
+                if gold_set.has_key(tk):
+                    false_negative += 1.0
+                else:
+                    true_negative += 1.0
+
+        positives = true_positive + false_positive
+        precision = true_positive / positives if positives > 0.0 else 0.0
+        recall = true_positive / num if num > 0.0 else 0.0
+        denominator = precision + recall
+        f1 = 2*precision*recall/denominator if denominator > 0.0 else 0.0
+        rewards.append(f1)
+
+    return np.array(rewards, dtype=np.float32)
+
+
 def get_reward_bleu(gold_summary_tks, real_sum_list):
     """ BLEU score as reward """
     return np.array([sentence_bleu([r], s, smoothing_function=chencherry)
