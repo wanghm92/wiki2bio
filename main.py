@@ -22,7 +22,7 @@ bc = None
 last_best = 0.0
 file_paths = {}
 
-suffix='data'
+suffix='small'
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 
@@ -150,51 +150,61 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
 
   for e in range(FLAGS.epoch):
     L.info('Training Epoch --%2d--\n'%e)
-    for x in dataloader.batch_iter(trainset, FLAGS.batch_size, shuffle=True):
-      model_returns = model.train(x, sess, train_box_val, bc,
-                                  rl=rl, vocab=v, neg=FLAGS.neg, discount=FLAGS.discount,
-                                  sampling=FLAGS.sampling, self_critic=FLAGS.self_critic)
-      if rl:
-        loss_mean, loss_mle, loss_rl = model_returns
-        loss_mle_sum += loss_mle
-        loss_rl_sum += loss_rl
+    accumulator = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [], 'dec_in': [],
+                  'dec_len': [], 'dec_out': [], 'indices': [], 'summaries': []}
+    accumulator_sampled = {'dec_in_sampled': [], 'summary_len': [], 'dec_out_sampled': [],
+                           'rewards': [], 'real_ids_list_greedy': []}
+    counter = 0
+    for batch_data in dataloader.batch_iter(trainset, FLAGS.batch_size, shuffle=True):
+      finished, loss_mean, loss_mle, loss_rl, accumulator, accumulator_sampled, counter = \
+        model.train(batch_data, sess, train_box_val, bc,
+                    rl=rl, vocab=v, neg=FLAGS.neg, discount=FLAGS.discount,
+                    sampling=FLAGS.sampling, self_critic=FLAGS.self_critic,
+                    accumulator=accumulator, accumulator_sampled=accumulator_sampled, counter=counter)
+      if not finished:
+        continue
       else:
-        loss_mean = model_returns
-      loss += loss_mean
-      progress_bar(batch%(FLAGS.report * FLAGS.eval_multi), (FLAGS.report * FLAGS.eval_multi))
-
-      if (batch % FLAGS.report == 0):
-        cnt = batch//FLAGS.report + FLAGS.cnt
-        cost_time = time.time() - start_time
-        avg_loss = loss / (FLAGS.report*1.0)
-        write_log("%d : avg_loss = %.3f, time = %.3f"% (cnt, avg_loss, cost_time), log_file)
-        tfwriter.add_summary(tf_summary_entry('train/loss', avg_loss), cnt)
-        loss, start_time = 0.0, time.time()
         if rl:
-          avg_loss_mle = loss_mle_sum / (FLAGS.report*1.0)
-          avg_loss_rl = loss_rl_sum / (FLAGS.report*1.0)
-          write_log("%d : avg_loss_mle = %.3f, avg_loss_rl = %.3f, time = %.3f"
-                  %(cnt, avg_loss_mle, avg_loss_rl, cost_time), log_file)
-          tfwriter.add_summary(tf_summary_entry('train/loss_mle', avg_loss_mle), cnt)
-          tfwriter.add_summary(tf_summary_entry('train/loss_rl', avg_loss_rl), cnt)
-          loss_mle_sum, loss_rl_sum = 0.0, 0.0
+          # loss_mean, loss_mle, loss_rl = model_returns
+          loss_mle_sum += loss_mle
+          loss_rl_sum += loss_rl
+        # else:
+          # loss_mean = model_returns
+        loss += loss_mean
+        progress_bar(batch%(FLAGS.report * FLAGS.eval_multi), (FLAGS.report * FLAGS.eval_multi))
 
-        if batch % (FLAGS.report * FLAGS.eval_multi) == 0:
-          cnt = batch // (FLAGS.report * FLAGS.eval_multi) + FLAGS.cnt
-          ksave_dir = save_model(model, save_dir, cnt)
-          r, b_unk, b_cpy = evaluate(sess, dataloader, model, ksave_dir, 'valid', v)
-          write_log(r, log_file)
-          tfwriter.add_summary(tf_summary_entry('valid/BLEU', b_cpy), cnt)
-          # tfwriter.add_summary(tf_summary_entry('train/loss', avg_loss), cnt)
-          # tfwriter.add_summary(tf_summary_entry('valid/loss', l_v), cnt)
+        if (batch % FLAGS.report == 0):
+          cnt = batch//FLAGS.report + FLAGS.cnt
+          cost_time = time.time() - start_time
+          avg_loss = loss / (FLAGS.report*1.0)
+          write_log("%d : avg_loss = %.3f, time = %.3f"% (cnt, avg_loss, cost_time), log_file)
+          tfwriter.add_summary(tf_summary_entry('train/loss', avg_loss), cnt)
+          loss, start_time = 0.0, time.time()
+          if rl:
+            avg_loss_mle = loss_mle_sum / (FLAGS.report*1.0)
+            avg_loss_rl = loss_rl_sum / (FLAGS.report*1.0)
+            write_log("%d : avg_loss_mle = %.3f, avg_loss_rl = %.3f, time = %.3f"
+                    %(cnt, avg_loss_mle, avg_loss_rl, cost_time), log_file)
+            tfwriter.add_summary(tf_summary_entry('train/loss_mle', avg_loss_mle), cnt)
+            tfwriter.add_summary(tf_summary_entry('train/loss_rl', avg_loss_rl), cnt)
+            loss_mle_sum, loss_rl_sum = 0.0, 0.0
 
-          for i in range(FLAGS.max_to_keep):
-            if b_cpy >= best_bleu[i][1]:
-              best_bleu[i] = ('ep%d'%cnt, b_cpy, b_unk)
-              save_ckpt(sess, saver, save_dir, cnt)
-              with open(rank_file, 'w+') as fout:
-                json.dump(best_bleu, fout, sort_keys=True, indent=4)
-              break
+          if batch % (FLAGS.report * FLAGS.eval_multi) == 0:
+            cnt = batch // (FLAGS.report * FLAGS.eval_multi) + FLAGS.cnt
+            ksave_dir = save_model(model, save_dir, cnt)
+            r, b_unk, b_cpy = evaluate(sess, dataloader, model, ksave_dir, 'valid', v)
+            write_log(r, log_file)
+            tfwriter.add_summary(tf_summary_entry('valid/BLEU', b_cpy), cnt)
+            # tfwriter.add_summary(tf_summary_entry('train/loss', avg_loss), cnt)
+            # tfwriter.add_summary(tf_summary_entry('valid/loss', l_v), cnt)
+
+            for i in range(FLAGS.max_to_keep):
+              if b_cpy >= best_bleu[i][1]:
+                best_bleu[i] = ('ep%d'%cnt, b_cpy, b_unk)
+                save_ckpt(sess, saver, save_dir, cnt)
+                with open(rank_file, 'w+') as fout:
+                  json.dump(best_bleu, fout, sort_keys=True, indent=4)
+                break
       batch += 1
 
 def bleu_score(labels_file, predictions_path):

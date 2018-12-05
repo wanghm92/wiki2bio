@@ -537,10 +537,13 @@ class SeqUnit(object):
 
   def train(self, x, sess, train_box_val, bc,
             rl=False, vocab=None, neg=False, discount=0.0,
-            sampling=False, self_critic=False):
+            sampling=False, self_critic=False,
+            accumulator=None, accumulator_sampled=None, counter=0):
     return self.train_rl(x, sess, train_box_val, bc,
                          vocab=vocab, neg=neg, discount=discount,
-                         sampling=sampling, self_critic=self_critic) if rl \
+                         sampling=sampling, self_critic=self_critic,
+                         accumulator=accumulator, accumulator_sampled=accumulator_sampled,
+                         counter=counter) if rl \
       else self.train_mle(x, sess)
 
   def train_mle(self, x, sess):
@@ -557,9 +560,10 @@ class SeqUnit(object):
 
   def train_rl(self, batch_data, sess, train_box_val, bc,
                vocab=None, neg=False, discount=0.0,
-               sampling=False, self_critic=False):
+               sampling=False, self_critic=False,
+               accumulator=None, accumulator_sampled=None, counter=0):
 
-    start_time = time.time()
+    # start_time = time.time()
     if vocab is None:
       raise ValueError("vocab cannot be None")
     if self_critic:
@@ -568,6 +572,7 @@ class SeqUnit(object):
     box_ids = batch_data['enc_in']
     sample_indices = batch_data['indices']
     gold_summary_tks = batch_data['summaries']
+    batch_size = box_ids.shape[0]
     train_box_batch = [train_box_val[i] for i in sample_indices]
 
     def _replace_unk(target_prediction_ids, target_atts):
@@ -606,48 +611,82 @@ class SeqUnit(object):
       summary_len = np.array(summary_len, dtype=np.float32)
       max_summary_len = max([len(x) for x in real_ids_list])
       dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
-      dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list],
-                                 dtype=np.float32)
+      dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
 
-      return real_sum_list, summary_len, dec_in_sampled, dec_out_sampled
+      return real_sum_list, real_ids_list, summary_len, dec_in_sampled, dec_out_sampled
 
     '''predictions: [batch, length_decoder], atts: [length_decoder, length_encoder, batch]'''
     prediction_ids, atts = self.generate(batch_data, sess, sampling=sampling)
-    real_sum_list, summary_len, dec_in_sampled, dec_out_sampled = _replace_unk(prediction_ids, atts)
+    real_sum_list, real_ids_list, summary_len, dec_in_sampled, dec_out_sampled = _replace_unk(prediction_ids, atts)
     rewards = get_reward_bleu(gold_summary_tks, real_sum_list)
 
     if self_critic:
       prediction_ids_greedy, atts_greedy = self.generate(batch_data, sess, sampling=False)
-      real_sum_list_greedy, _, _, _ = _replace_unk(prediction_ids_greedy, atts_greedy)
+      real_sum_list_greedy, real_ids_list_greedy, summary_len, _, _ = _replace_unk(prediction_ids_greedy, atts_greedy)
       baseline_rewards = get_reward_bleu(gold_summary_tks, real_sum_list_greedy)
       rewards -= baseline_rewards
+      for k, v in batch_data.iteritems():
+        for l, r in zip(v.tolist(), rewards):
+          if r > 0.0:
+            accumulator[k].append(l)
+            counter += 1
+      for r, real_ids_greedy, l in zip(rewards, real_ids_list_greedy, summary_len):
+        if r > 0.0:
+          accumulator_sampled['real_ids_list_greedy'].append(real_ids_greedy)
+          accumulator_sampled['summary_len'].append(l)
+          accumulator_sampled['rewards'].append(r)
 
+    if self_critic and counter < batch_size:
+      return False, 0.0, 0.0, 0.0, accumulator, accumulator_sampled, counter
+    else:
+      summary_len = np.array(accumulator_sampled['summary_len'], dtype=np.float32)
+      real_ids_list_greedy = accumulator_sampled['real_ids_list_greedy']
+      max_summary_len = max([len(x) for x in real_ids_list_greedy])
+      dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list_greedy], dtype=np.float32)
+      dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list_greedy], dtype=np.float32)
+      rewards = np.array(accumulator_sampled['rewards'], dtype=np.float32)
+      print(dec_in_sampled.shape)
+      print(summary_len.shape)
+      print(dec_out_sampled.shape)
+      print(rewards.shape)
+      print(summary_len)
+      print(rewards)
+      for k, v in accumulator.iteritems():
+        print("{}:\n{}".format(k,v))
+        try:
+          print([len(i) for i in v])
+        except TypeError:
+          continue
+      # TODO
+        # F1 rewards
+      # print(baseline_rewards)
+      # print(rewards)
+      # cost_time = time.time() - start_time
+      # print("prepare time = %.3f" % (cost_time))
+      # sys.exit(0)
+      # rewards = get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len, bc, neg=neg, discount=discount)
 
-    # TODO
-      # F1 rewards
-    # print(baseline_rewards)
-    # print(rewards)
-    # cost_time = time.time() - start_time
-    # print("prepare time = %.3f" % (cost_time))
-    # sys.exit(0)
-    # rewards = get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len, bc, neg=neg, discount=discount)
+      loss, loss_mle, loss_rl,  _ = sess.run([self.mean_loss, self.loss_mle, self.loss_rl, self.train_op],
+                                             {self.encoder_input:  accumulator['enc_in'],
+                                              self.encoder_field:  accumulator['enc_fd'],
+                                              self.encoder_pos:    accumulator['enc_pos'],
+                                              self.encoder_rpos:   accumulator['enc_rpos'],
+                                              self.decoder_input:  accumulator['dec_in'],
+                                              self.encoder_len:    accumulator['enc_len'],
+                                              self.decoder_len: 	 accumulator['dec_len'],
+                                              self.decoder_output: accumulator['dec_out'],
+                                              self.decoder_input_sampled: dec_in_sampled,
+                                              self.decoder_len_sampled: summary_len,
+                                              self.decoder_output_sampled: dec_out_sampled,
+                                              self.rewards: rewards,
+                                              })
 
-    loss, loss_mle, loss_rl,  _ = sess.run([self.mean_loss, self.loss_mle, self.loss_rl, self.train_op],
-                                           {self.encoder_input:  batch_data['enc_in'],
-                                            self.encoder_field:  batch_data['enc_fd'],
-                                            self.encoder_pos:    batch_data['enc_pos'],
-                                            self.encoder_rpos:   batch_data['enc_rpos'],
-                                            self.decoder_input:  batch_data['dec_in'],
-                                            self.encoder_len:    batch_data['enc_len'],
-                                            self.decoder_len: 	  batch_data['dec_len'],
-                                            self.decoder_output: batch_data['dec_out'],
-                                            self.decoder_input_sampled: dec_in_sampled,
-                                            self.decoder_len_sampled: summary_len,
-                                            self.decoder_output_sampled: dec_out_sampled,
-                                            self.rewards: rewards,
-                                            })
+      accumulator = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [], 'dec_in': [],
+                     'dec_len': [], 'dec_out': [], 'indices': [], 'summaries': []}
+      accumulator_sampled = {'dec_in_sampled': [], 'summary_len': [], 'dec_out_sampled': [],
+                             'rewards': [], 'real_ids_list_greedy': []}
 
-    return loss, loss_mle, loss_rl
+      return True, loss, loss_mle, loss_rl, accumulator, accumulator_sampled, 0
 
   def generate(self, x, sess, sampling=False):
     ops = [self.g_tokens, self.atts] if not sampling else [self.multinomial_tokens, self.multinomial_atts]

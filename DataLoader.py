@@ -67,14 +67,13 @@ class DataLoader(object):
         length = len(summary_id.strip().split(' '))
         if (length > MAX or length < MIN):
           continue
-      else:
-        summary_ids_out.append(list(map(int, summary_id.strip().split(' '))))
-        summary_tks_out.append(summary_tk.strip().split(' '))
-        texts_out.append(list(map(int, text.strip().split(' '))))
-        fields_out.append(list(map(int, field.strip().split(' '))))
-        poses_out.append(list(map(int, pos.strip().split(' '))))
-        rposes_out.append(list(map(int, rpos.strip().split(' '))))
-
+        else:
+          summary_ids_out.append(list(map(int, summary_id.strip().split(' '))))
+          summary_tks_out.append(summary_tk.strip().split(' '))
+          texts_out.append(list(map(int, text.strip().split(' '))))
+          fields_out.append(list(map(int, field.strip().split(' '))))
+          poses_out.append(list(map(int, pos.strip().split(' '))))
+          rposes_out.append(list(map(int, rpos.strip().split(' '))))
     else:
       summary_ids_out = [list(map(int, summary.strip().split(' '))) for summary in summary_ids]
       summary_tks_out = [summary.strip().split(' ') for summary in summary_tks]
