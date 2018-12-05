@@ -22,7 +22,7 @@ bc = None
 last_best = 0.0
 file_paths = {}
 
-suffix='data'
+suffix='small'
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 
@@ -150,7 +150,7 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
 
   for e in range(FLAGS.epoch):
     L.info('Training Epoch --%2d--\n'%e)
-    for x in dataloader.batch_iter(trainset, FLAGS.batch_size, True):
+    for x in dataloader.batch_iter(trainset, FLAGS.batch_size, shuffle=True):
       model_returns = model.train(x, sess, train_box_val, bc,
                                   rl=rl, vocab=v, neg=FLAGS.neg, discount=FLAGS.discount,
                                   sampling=FLAGS.sampling, self_critic=FLAGS.self_critic)
@@ -245,7 +245,7 @@ def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
   num_batches = int(data_size / FLAGS.batch_size) if data_size % FLAGS.batch_size == 0 \
                             else int(data_size / FLAGS.batch_size) + 1
   L.info('Evaluating by batches ...')
-  for x in dataloader.batch_iter(evalset, FLAGS.batch_size, False):
+  for x in dataloader.batch_iter(evalset, FLAGS.batch_size):
     predictions, atts = model.generate(x, sess)
     # loss += l
     atts = np.squeeze(atts)
@@ -311,7 +311,7 @@ def evaluate_both(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
   data_size = len(evalset[0])
   L.info('data_size = {}'.format(data_size))
   L.info('Evaluating by batches ...')
-  for x in dataloader.batch_iter(evalset, FLAGS.batch_size, False):
+  for x in dataloader.batch_iter(evalset, FLAGS.batch_size):
     predictions, atts = model.generate(x, sess)
     # loss += l
     atts = np.squeeze(atts)
@@ -391,7 +391,7 @@ def evaluate_beam(sess, dataloader, model, ksave_dir, mode='valid', vocab=None, 
 
   all_summary = {k: v for k, v in zip(range(1,beam_size+1), [[] for _ in range(1,beam_size+1)])}
 
-  for x in dataloader.batch_iter(evalset, 1, False):
+  for x in dataloader.batch_iter(evalset, 1):
     counter += 1
 
     beam_seqs_all, beam_probs_all, beam_predictions, cand_probs_all = model.generate_beam(x, sess)

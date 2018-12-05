@@ -622,6 +622,9 @@ class SeqUnit(object):
       baseline_rewards = get_reward_bleu(gold_summary_tks, real_sum_list_greedy)
       rewards -= baseline_rewards
 
+
+    # TODO
+      # F1 rewards
     # print(baseline_rewards)
     # print(rewards)
     # cost_time = time.time() - start_time

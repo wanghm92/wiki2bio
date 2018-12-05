@@ -6,7 +6,8 @@
 import tensorflow as tf
 import time
 import numpy as np
-
+MAX = 64
+MIN = 5
 
 class DataLoader(object):
   def __init__(self, data_dir, data_dir_ori, limits):
@@ -37,12 +38,12 @@ class DataLoader(object):
     print('Reading datasets ...')
     print(data_dir)
     print(data_dir_ori)
-    self.train_set = self.load_data(self.train_data_path)
+    self.train_set = self.load_data(self.train_data_path, filter=True)
     self.test_set  = self.load_data(self.test_data_path)
     self.dev_set   = self.load_data(self.dev_data_path)
     print('Reading datasets consumes %.3f seconds' % (time.time() - start_time))
 
-  def load_data(self, path):
+  def load_data(self, path, filter=False):
     summary_id_path, text_path, field_path, pos_path, rpos_path, summary_tk_path = path
 
     summary_ids = open(summary_id_path, 'r').read().strip().split('\n')
@@ -60,16 +61,31 @@ class DataLoader(object):
       poses 	  = poses[:self.limits]
       rposes 	  = rposes[:self.limits]
 
-    summary_ids = [list(map(int, summary.strip().split(' '))) for summary in summary_ids]
-    summary_tks = [summary.strip().split(' ') for summary in summary_tks]
-    texts 	  = [list(map(int, text.strip().split(' ')))    for text in texts]
-    fields 	  = [list(map(int, field.strip().split(' ')))   for field in fields]
-    poses 	  = [list(map(int, pos.strip().split(' ')))     for pos in poses]
-    rposes 	  = [list(map(int, rpos.strip().split(' ')))    for rpos in rposes]
+    if filter:
+      summary_ids_out, texts_out, fields_out, poses_out, rposes_out, summary_tks_out = [], [], [], [], [], []
+      for summary_id, summary_tk, text, field, pos, rpos in zip(summary_ids, summary_tks, texts, fields, poses, rposes):
+        length = len(summary_id.strip().split(' '))
+        if (length > MAX or length < MIN):
+          continue
+      else:
+        summary_ids_out.append(list(map(int, summary_id.strip().split(' '))))
+        summary_tks_out.append(summary_tk.strip().split(' '))
+        texts_out.append(list(map(int, text.strip().split(' '))))
+        fields_out.append(list(map(int, field.strip().split(' '))))
+        poses_out.append(list(map(int, pos.strip().split(' '))))
+        rposes_out.append(list(map(int, rpos.strip().split(' '))))
 
-    return summary_ids, texts, fields, poses, rposes, summary_tks
+    else:
+      summary_ids_out = [list(map(int, summary.strip().split(' '))) for summary in summary_ids]
+      summary_tks_out = [summary.strip().split(' ') for summary in summary_tks]
+      texts_out 	  = [list(map(int, text.strip().split(' ')))    for text in texts]
+      fields_out	  = [list(map(int, field.strip().split(' ')))   for field in fields]
+      poses_out 	  = [list(map(int, pos.strip().split(' ')))     for pos in poses]
+      rposes_out 	  = [list(map(int, rpos.strip().split(' ')))    for rpos in rposes]
 
-  def batch_iter(self, data, batch_size, shuffle):
+    return summary_ids_out, texts_out, fields_out, poses_out, rposes_out, summary_tks_out
+
+  def batch_iter(self, data, batch_size, shuffle=False):
     summary_ids, texts, fields, poses, rposes, summary_tks = data
     data_size 	= len(summary_ids)
     num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
