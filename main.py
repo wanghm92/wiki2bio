@@ -22,7 +22,7 @@ bc = None
 last_best = 0.0
 file_paths = {}
 
-suffix='small'
+suffix='data'
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 
@@ -156,17 +156,17 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
   for e in range(FLAGS.epoch):
     L.info('Training Epoch --%2d--\n' % e)
     for batch_data in dataloader.batch_iter(trainset, FLAGS.batch_size, shuffle=True):
-      print("[main before] counter = {}".format(counter))
+      # print("[main before] counter = {}".format(counter))
       finished, loss_mean, loss_mle, loss_rl, accumulator, accumulator_sampled, counter = \
         model.train(batch_data, sess, train_box_val, bc,
                     rl=rl, vocab=v, neg=FLAGS.neg, discount=FLAGS.discount,
                     sampling=FLAGS.sampling, self_critic=FLAGS.self_critic,
                     accumulator=accumulator, accumulator_sampled=accumulator_sampled, counter=counter)
       if not finished:
-        print("[main not finished] counter = {}".format(counter))
+        # print("[main not finished] counter = {}".format(counter))
         continue
       else:
-        print(" !!!!!!!!!!!!!!!!!  prepare finished !!!!!!!!!!!!!!!! counter = {}".format(counter))
+        # print(" !!!!!!!!!!!!!!!!!  prepare finished !!!!!!!!!!!!!!!! counter = {}".format(counter))
 
         if rl:
           # loss_mean, loss_mle, loss_rl = model_returns

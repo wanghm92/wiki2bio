@@ -563,7 +563,7 @@ class SeqUnit(object):
                sampling=False, self_critic=False,
                accumulator=None, accumulator_sampled=None, counter=0):
 
-    start_time = time.time()
+    # start_time = time.time()
     if vocab is None:
       raise ValueError("vocab cannot be None")
     if self_critic:
@@ -624,16 +624,16 @@ class SeqUnit(object):
       prediction_ids_greedy, atts_greedy = self.generate(batch_data, sess, sampling=False)
       real_sum_list_greedy, _, _, _, _ = _replace_unk(prediction_ids_greedy, atts_greedy)
       baseline_rewards = get_reward_bleu(gold_summary_tks, real_sum_list_greedy)
-      print("rewards BEFORE")
-      print(rewards)
+      # print("rewards BEFORE")
+      # print(rewards)
       rewards -= baseline_rewards
-      print("baseline rewards")
-      print(baseline_rewards)
-      print("rewards AFTER")
-      print(rewards)
+      # print("baseline rewards")
+      # print(baseline_rewards)
+      # print("rewards AFTER")
+      # print(rewards)
       counter += len([r for r in rewards if r > 0.0])
       for k, v in batch_data.iteritems():
-        print(v.shape)
+        # print(v.shape)
         for l, r in zip(v.tolist(), rewards):
           if r > 0.0:
             accumulator[k].append(l)
@@ -644,24 +644,24 @@ class SeqUnit(object):
           accumulator_sampled['summary_len'].append(l)
           accumulator_sampled['rewards'].append(r)
 
-      print("counter = {}".format(counter))
-      if counter < 32:
+      # print("counter = {}".format(counter))
+      if counter < self.batch_size:
         return False, 0.0, 0.0, 0.0, accumulator, accumulator_sampled, counter
       else:
         ''' padding sampled output '''
         max_summary_len = max(accumulator_sampled['summary_len'])
-        print("max_summary_len = {}".format(max_summary_len))
+        # print("max_summary_len = {}".format(max_summary_len))
         summary_len = np.array(accumulator_sampled['summary_len'], dtype=np.int32)
-        print(summary_len)
+        # print(summary_len)
         real_ids_list = accumulator_sampled['real_ids_list']
         dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
         dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
         rewards = np.array(accumulator_sampled['rewards'], dtype=np.float32)
 
         max_encoder_len_padded = max([len(v) for v in accumulator['enc_in']])
-        print("max_encoder_len_padded = {}".format(max_encoder_len_padded))
+        # print("max_encoder_len_padded = {}".format(max_encoder_len_padded))
         max_encoder_len = max(accumulator['enc_len'])
-        print("max_encoder_len = {}".format(max_encoder_len))
+        # print("max_encoder_len = {}".format(max_encoder_len))
         for key in ['enc_in', 'enc_fd', 'enc_pos', 'enc_rpos']:
           value = accumulator[key]
           value_padded = [v + [0] * (max_encoder_len - len(v)) for v in value]
@@ -672,12 +672,12 @@ class SeqUnit(object):
             value_cropped = [v[:max_encoder_len] for v in value]
             accumulator[key] = value_cropped
 
-        print("dec_len")
-        print(accumulator['dec_len'])
+        # print("dec_len")
+        # print(accumulator['dec_len'])
         max_decoder_len = max(accumulator['dec_len'])
-        print("max_decoder_len = {}".format(max_decoder_len))
+        # print("max_decoder_len = {}".format(max_decoder_len))
         max_decoder_len_padded = max([len(i) for i in accumulator['dec_in']])
-        print("max_decoder_len_padded = {}".format(max_decoder_len_padded))
+        # print("max_decoder_len_padded = {}".format(max_decoder_len_padded))
         value = accumulator['dec_in']
         value_padded = [v + [0] * (max_decoder_len - len(v)) for v in value]
         accumulator['dec_in'] = value_padded
@@ -692,35 +692,33 @@ class SeqUnit(object):
           value_cropped = [v[:max_decoder_len+1] for v in value]
           accumulator['dec_out'] = value_cropped
 
-        for k, v in accumulator.iteritems():
-          if isinstance(v[0], list):
-            print("{}: {}".format(k, [len(i) for i in v]))
-          else:
-            print("{}: {}".format(k, v))
-
-        # TODO: limit max decoder length
+        # for k, v in accumulator.iteritems():
+        #   if isinstance(v[0], list):
+            # print("{}: {}".format(k, [len(i) for i in v]))
+          # else:
+            # print("{}: {}".format(k, v))
 
         accumulator_np = {}
         for k, v in accumulator.iteritems():
-          print(k)
+          # print(k)
           accumulator_np[k] = np.array(v)
-          print(accumulator_np[k].shape)
+          # print(accumulator_np[k].shape)
 
-        print("dec_in_sampled.shape")
-        print(dec_in_sampled.shape)
-        print("summary_len.shape")
-        print(summary_len.shape)
-        print(summary_len.dtype)
-        print("dec_out_sampled.shape")
-        print(dec_out_sampled.shape)
-        print("rewards.shape")
-        print(rewards.shape)
-        print("summary_len")
-        print(summary_len)
-        print("rewards")
-        print(rewards)
-        cost_time = time.time() - start_time
-        print("prepare time = %.3f" % (cost_time))
+        # print("dec_in_sampled.shape")
+        # print(dec_in_sampled.shape)
+        # print("summary_len.shape")
+        # print(summary_len.shape)
+        # print(summary_len.dtype)
+        # print("dec_out_sampled.shape")
+        # print(dec_out_sampled.shape)
+        # print("rewards.shape")
+        # print(rewards.shape)
+        # print("summary_len")
+        # print(summary_len)
+        # print("rewards")
+        # print(rewards)
+        # cost_time = time.time() - start_time
+        # print("prepare time = %.3f" % (cost_time))
         # sys.exit(0)
 
         loss, loss_mle, loss_rl,  _ = sess.run([self.mean_loss, self.loss_mle, self.loss_rl, self.train_op],
