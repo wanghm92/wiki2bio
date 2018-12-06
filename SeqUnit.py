@@ -21,7 +21,7 @@ import numpy as np
 class SeqUnit(object):
   def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab,field_vocab, position_vocab,
                target_vocab, field_concat, position_concat, fgate_enc, dual_att, encoder_add_pos, decoder_add_pos,
-               learning_rate, scope_name, name, start_token=2, stop_token=2, max_length=150,
+               learning_rate, scope_name, name, start_token=2, stop_token=2, max_length=100,
                rl=False, loss_alpha=1, beam_size=1, lp_alpha=0.9):
     '''
     batch_size, hidden_size, emb_size, field_size, pos_size:
@@ -79,7 +79,7 @@ class SeqUnit(object):
       self.decoder_input_sampled = tf.placeholder(tf.int32, [None, None])
       self.decoder_len_sampled  = tf.placeholder(tf.int32, [None])
       self.decoder_output_sampled = tf.placeholder(tf.int32, [None, None])
-      self.rewards = tf.placeholder(tf.float32, [None, ])
+      self.rewards = tf.placeholder(tf.float32, [None])
       self.loss_alpha = tf.constant(self.loss_alpha_value, dtype=tf.float32)
 
     with tf.variable_scope(scope_name):
@@ -563,7 +563,7 @@ class SeqUnit(object):
                sampling=False, self_critic=False,
                accumulator=None, accumulator_sampled=None, counter=0):
 
-    # start_time = time.time()
+    start_time = time.time()
     if vocab is None:
       raise ValueError("vocab cannot be None")
     if self_critic:
@@ -608,7 +608,7 @@ class SeqUnit(object):
 
         batch += 1
 
-      summary_len = np.array(summary_len, dtype=np.float32)
+      summary_len = np.array(summary_len, dtype=np.int32)
       max_summary_len = max([len(x) for x in real_ids_list])
       dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
       dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
@@ -622,71 +622,128 @@ class SeqUnit(object):
 
     if self_critic:
       prediction_ids_greedy, atts_greedy = self.generate(batch_data, sess, sampling=False)
-      real_sum_list_greedy, real_ids_list_greedy, summary_len, _, _ = _replace_unk(prediction_ids_greedy, atts_greedy)
+      real_sum_list_greedy, _, _, _, _ = _replace_unk(prediction_ids_greedy, atts_greedy)
       baseline_rewards = get_reward_bleu(gold_summary_tks, real_sum_list_greedy)
+      print("rewards BEFORE")
+      print(rewards)
       rewards -= baseline_rewards
+      print("baseline rewards")
+      print(baseline_rewards)
+      print("rewards AFTER")
+      print(rewards)
+      counter += len([r for r in rewards if r > 0.0])
       for k, v in batch_data.iteritems():
+        print(v.shape)
         for l, r in zip(v.tolist(), rewards):
           if r > 0.0:
             accumulator[k].append(l)
-            counter += 1
-      for r, real_ids_greedy, l in zip(rewards, real_ids_list_greedy, summary_len):
+
+      for r, real_ids, l in zip(rewards, real_ids_list, summary_len):
         if r > 0.0:
-          accumulator_sampled['real_ids_list_greedy'].append(real_ids_greedy)
+          accumulator_sampled['real_ids_list'].append(real_ids)
           accumulator_sampled['summary_len'].append(l)
           accumulator_sampled['rewards'].append(r)
 
-    if self_critic and counter < batch_size:
-      return False, 0.0, 0.0, 0.0, accumulator, accumulator_sampled, counter
-    else:
-      summary_len = np.array(accumulator_sampled['summary_len'], dtype=np.float32)
-      real_ids_list_greedy = accumulator_sampled['real_ids_list_greedy']
-      max_summary_len = max([len(x) for x in real_ids_list_greedy])
-      dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list_greedy], dtype=np.float32)
-      dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list_greedy], dtype=np.float32)
-      rewards = np.array(accumulator_sampled['rewards'], dtype=np.float32)
-      print(dec_in_sampled.shape)
-      print(summary_len.shape)
-      print(dec_out_sampled.shape)
-      print(rewards.shape)
-      print(summary_len)
-      print(rewards)
-      for k, v in accumulator.iteritems():
-        print("{}:\n{}".format(k,v))
-        try:
-          print([len(i) for i in v])
-        except TypeError:
-          continue
-      # TODO
-        # F1 rewards
-      # print(baseline_rewards)
-      # print(rewards)
-      # cost_time = time.time() - start_time
-      # print("prepare time = %.3f" % (cost_time))
-      # sys.exit(0)
-      # rewards = get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len, bc, neg=neg, discount=discount)
+      print("counter = {}".format(counter))
+      if counter < 32:
+        return False, 0.0, 0.0, 0.0, accumulator, accumulator_sampled, counter
+      else:
+        ''' padding sampled output '''
+        max_summary_len = max(accumulator_sampled['summary_len'])
+        print("max_summary_len = {}".format(max_summary_len))
+        summary_len = np.array(accumulator_sampled['summary_len'], dtype=np.int32)
+        print(summary_len)
+        real_ids_list = accumulator_sampled['real_ids_list']
+        dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
+        dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
+        rewards = np.array(accumulator_sampled['rewards'], dtype=np.float32)
 
-      loss, loss_mle, loss_rl,  _ = sess.run([self.mean_loss, self.loss_mle, self.loss_rl, self.train_op],
-                                             {self.encoder_input:  accumulator['enc_in'],
-                                              self.encoder_field:  accumulator['enc_fd'],
-                                              self.encoder_pos:    accumulator['enc_pos'],
-                                              self.encoder_rpos:   accumulator['enc_rpos'],
-                                              self.decoder_input:  accumulator['dec_in'],
-                                              self.encoder_len:    accumulator['enc_len'],
-                                              self.decoder_len: 	 accumulator['dec_len'],
-                                              self.decoder_output: accumulator['dec_out'],
-                                              self.decoder_input_sampled: dec_in_sampled,
-                                              self.decoder_len_sampled: summary_len,
-                                              self.decoder_output_sampled: dec_out_sampled,
-                                              self.rewards: rewards,
-                                              })
+        max_encoder_len_padded = max([len(v) for v in accumulator['enc_in']])
+        print("max_encoder_len_padded = {}".format(max_encoder_len_padded))
+        max_encoder_len = max(accumulator['enc_len'])
+        print("max_encoder_len = {}".format(max_encoder_len))
+        for key in ['enc_in', 'enc_fd', 'enc_pos', 'enc_rpos']:
+          value = accumulator[key]
+          value_padded = [v + [0] * (max_encoder_len - len(v)) for v in value]
+          accumulator[key] = value_padded
+        if max_encoder_len_padded > max_encoder_len:
+          for key in ['enc_in', 'enc_fd', 'enc_pos', 'enc_rpos']:
+            value = accumulator[key]
+            value_cropped = [v[:max_encoder_len] for v in value]
+            accumulator[key] = value_cropped
 
-      accumulator = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [], 'dec_in': [],
-                     'dec_len': [], 'dec_out': [], 'indices': [], 'summaries': []}
-      accumulator_sampled = {'dec_in_sampled': [], 'summary_len': [], 'dec_out_sampled': [],
-                             'rewards': [], 'real_ids_list_greedy': []}
+        print("dec_len")
+        print(accumulator['dec_len'])
+        max_decoder_len = max(accumulator['dec_len'])
+        print("max_decoder_len = {}".format(max_decoder_len))
+        max_decoder_len_padded = max([len(i) for i in accumulator['dec_in']])
+        print("max_decoder_len_padded = {}".format(max_decoder_len_padded))
+        value = accumulator['dec_in']
+        value_padded = [v + [0] * (max_decoder_len - len(v)) for v in value]
+        accumulator['dec_in'] = value_padded
+        value = accumulator['dec_out']
+        value_padded = [v + [0] * (max_decoder_len + 1 - len(v)) for v in value]
+        accumulator['dec_out'] = value_padded
+        if max_decoder_len_padded > max_decoder_len:
+          value = accumulator['dec_in']
+          value_cropped = [v[:max_decoder_len] for v in value]
+          accumulator['dec_in'] = value_cropped
+          value = accumulator['dec_out']
+          value_cropped = [v[:max_decoder_len+1] for v in value]
+          accumulator['dec_out'] = value_cropped
 
-      return True, loss, loss_mle, loss_rl, accumulator, accumulator_sampled, 0
+        for k, v in accumulator.iteritems():
+          if isinstance(v[0], list):
+            print("{}: {}".format(k, [len(i) for i in v]))
+          else:
+            print("{}: {}".format(k, v))
+
+        # TODO: limit max decoder length
+
+        accumulator_np = {}
+        for k, v in accumulator.iteritems():
+          print(k)
+          accumulator_np[k] = np.array(v)
+          print(accumulator_np[k].shape)
+
+        print("dec_in_sampled.shape")
+        print(dec_in_sampled.shape)
+        print("summary_len.shape")
+        print(summary_len.shape)
+        print(summary_len.dtype)
+        print("dec_out_sampled.shape")
+        print(dec_out_sampled.shape)
+        print("rewards.shape")
+        print(rewards.shape)
+        print("summary_len")
+        print(summary_len)
+        print("rewards")
+        print(rewards)
+        cost_time = time.time() - start_time
+        print("prepare time = %.3f" % (cost_time))
+        # sys.exit(0)
+
+        loss, loss_mle, loss_rl,  _ = sess.run([self.mean_loss, self.loss_mle, self.loss_rl, self.train_op],
+                                               {self.encoder_input:  accumulator_np['enc_in'],
+                                                self.encoder_field:  accumulator_np['enc_fd'],
+                                                self.encoder_pos:    accumulator_np['enc_pos'],
+                                                self.encoder_rpos:   accumulator_np['enc_rpos'],
+                                                self.decoder_input:  accumulator_np['dec_in'],
+                                                self.encoder_len:    accumulator_np['enc_len'],
+                                                self.decoder_len: 	 accumulator_np['dec_len'],
+                                                self.decoder_output: accumulator_np['dec_out'],
+                                                self.decoder_input_sampled: dec_in_sampled,
+                                                self.decoder_len_sampled: summary_len,
+                                                self.decoder_output_sampled: dec_out_sampled,
+                                                self.rewards: rewards,
+                                                })
+
+        accumulator = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [], 'dec_in': [],
+                       'dec_len': [], 'dec_out': [], 'indices': [], 'summaries': []}
+        accumulator_sampled = {'dec_in_sampled': [], 'summary_len': [], 'dec_out_sampled': [],
+                               'rewards': [], 'real_ids_list': []}
+
+        return True, loss, loss_mle, loss_rl, accumulator, accumulator_sampled, 0
 
   def generate(self, x, sess, sampling=False):
     ops = [self.g_tokens, self.atts] if not sampling else [self.multinomial_tokens, self.multinomial_atts]

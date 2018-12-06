@@ -148,22 +148,26 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
     train_box_val = open(train_path, 'r').read().strip().split('\n')
     train_box_val = [list(t.strip().split()) for t in train_box_val]
 
+  counter = 0
+  accumulator = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [], 'dec_in': [],
+                 'dec_len': [], 'dec_out': [], 'indices': [], 'summaries': []}
+  accumulator_sampled = {'dec_in_sampled': [], 'summary_len': [], 'dec_out_sampled': [],
+                         'rewards': [], 'real_ids_list': []}
   for e in range(FLAGS.epoch):
-    L.info('Training Epoch --%2d--\n'%e)
-    accumulator = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [], 'dec_in': [],
-                  'dec_len': [], 'dec_out': [], 'indices': [], 'summaries': []}
-    accumulator_sampled = {'dec_in_sampled': [], 'summary_len': [], 'dec_out_sampled': [],
-                           'rewards': [], 'real_ids_list_greedy': []}
-    counter = 0
+    L.info('Training Epoch --%2d--\n' % e)
     for batch_data in dataloader.batch_iter(trainset, FLAGS.batch_size, shuffle=True):
+      print("[main before] counter = {}".format(counter))
       finished, loss_mean, loss_mle, loss_rl, accumulator, accumulator_sampled, counter = \
         model.train(batch_data, sess, train_box_val, bc,
                     rl=rl, vocab=v, neg=FLAGS.neg, discount=FLAGS.discount,
                     sampling=FLAGS.sampling, self_critic=FLAGS.self_critic,
                     accumulator=accumulator, accumulator_sampled=accumulator_sampled, counter=counter)
       if not finished:
+        print("[main not finished] counter = {}".format(counter))
         continue
       else:
+        print(" !!!!!!!!!!!!!!!!!  prepare finished !!!!!!!!!!!!!!!! counter = {}".format(counter))
+
         if rl:
           # loss_mean, loss_mle, loss_rl = model_returns
           loss_mle_sum += loss_mle
