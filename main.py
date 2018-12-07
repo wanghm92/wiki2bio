@@ -209,7 +209,7 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
                 with open(rank_file, 'w+') as fout:
                   json.dump(best_bleu, fout, sort_keys=True, indent=4)
                 break
-      batch += 1
+        batch += 1
 
 def bleu_score(labels_file, predictions_path):
     bleu_script = '%s/onmt-tf-whm/third_party/multi-bleu.perl'%HOME
