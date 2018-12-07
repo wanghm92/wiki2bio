@@ -12,7 +12,7 @@ from dualAttentionUnit import dualAttentionWrapper
 from LstmUnit import LstmUnit
 from fgateLstmUnit import fgateLstmUnit
 from OutputUnit import OutputUnit
-from reward import get_reward, get_reward_bleu
+from reward import get_reward, get_reward_bleu, get_reward_coverage
 import numpy as np
 
 # POS = 1.5
@@ -538,13 +538,13 @@ class SeqUnit(object):
   def train(self, x, sess, train_box_val, bc,
             rl=False, vocab=None, neg=False, discount=0.0,
             sampling=False, self_critic=False,
-            accumulator=None, accumulator_sampled=None, counter=0):
+            accumulator=None, accumulator_sampled=None, counter=0,
+            bleu_rw=False, coverage_rw=False):
     return self.train_rl(x, sess, train_box_val, bc,
                          vocab=vocab, neg=neg, discount=discount,
                          sampling=sampling, self_critic=self_critic,
-                         accumulator=accumulator, accumulator_sampled=accumulator_sampled,
-                         counter=counter) if rl \
-      else self.train_mle(x, sess)
+                         accumulator=accumulator, accumulator_sampled=accumulator_sampled, counter=counter,
+                         bleu_rw=bleu_rw, coverage_rw=coverage_rw) if rl else self.train_mle(x, sess)
 
   def train_mle(self, x, sess):
     loss,  _ = sess.run([self.mean_loss, self.train_op],
@@ -556,12 +556,14 @@ class SeqUnit(object):
                  self.decoder_input:  x['dec_in'],
                  self.decoder_len: 	  x['dec_len'],
                  self.decoder_output: x['dec_out']})
+    # TODO: check returen
     return loss
 
   def train_rl(self, batch_data, sess, train_box_val, bc,
                vocab=None, neg=False, discount=0.0,
                sampling=False, self_critic=False,
-               accumulator=None, accumulator_sampled=None, counter=0):
+               accumulator=None, accumulator_sampled=None, counter=0,
+               bleu_rw=False, coverage_rw=False):
 
     # start_time = time.time()
     if vocab is None:
@@ -572,7 +574,9 @@ class SeqUnit(object):
     box_ids = batch_data['enc_in']
     sample_indices = batch_data['indices']
     gold_summary_tks = batch_data['summaries']
+    coverage_labels = batch_data['coverage_labels']
     batch_size = box_ids.shape[0]
+
     train_box_batch = [train_box_val[i] for i in sample_indices]
 
     def _replace_unk(target_prediction_ids, target_atts):
@@ -615,22 +619,42 @@ class SeqUnit(object):
 
       return real_sum_list, real_ids_list, summary_len, dec_in_sampled, dec_out_sampled
 
+    rewards = np.zeros(box_ids.shape[0], dtype=np.float32)
     '''predictions: [batch, length_decoder], atts: [length_decoder, length_encoder, batch]'''
     prediction_ids, atts = self.generate(batch_data, sess, sampling=sampling)
+
     real_sum_list, real_ids_list, summary_len, dec_in_sampled, dec_out_sampled = _replace_unk(prediction_ids, atts)
-    rewards = get_reward_bleu(gold_summary_tks, real_sum_list)
+    
+    # TODO: set basic reward
+    if bleu_rw:
+      '''bleu_rewards'''
+      bleu_rewards = get_reward_bleu(gold_summary_tks, real_sum_list)
+      rewards += bleu_rewards
+    if coverage_rw:
+      '''coverage_rewards'''
+      coverage_rewards = get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list, bc)
+      rewards += coverage_rewards
 
     if self_critic:
       prediction_ids_greedy, atts_greedy = self.generate(batch_data, sess, sampling=False)
       real_sum_list_greedy, _, _, _, _ = _replace_unk(prediction_ids_greedy, atts_greedy)
-      baseline_rewards = get_reward_bleu(gold_summary_tks, real_sum_list_greedy)
+      
+      if bleu_rw:
+        '''bleu_rewards'''
+        bleu_rewards_baseline = get_reward_bleu(gold_summary_tks, real_sum_list_greedy)
+        rewards -= bleu_rewards_baseline
+      if coverage_rw:
+        '''coverage_rewards'''
+        coverage_rewards_baseline = get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list_greedy, bc)
+        rewards -= coverage_rewards_baseline
+
       # print("rewards BEFORE")
       # print(rewards)
-      rewards -= baseline_rewards
       # print("baseline rewards")
       # print(baseline_rewards)
       # print("rewards AFTER")
       # print(rewards)
+      
       counter += len([r for r in rewards if r > 0.0])
       for k, v in batch_data.iteritems():
         # print(v.shape)
@@ -742,6 +766,7 @@ class SeqUnit(object):
                                'rewards': [], 'real_ids_list': []}
 
         return True, loss, loss_mle, loss_rl, accumulator, accumulator_sampled, 0
+      
 
   def generate(self, x, sess, sampling=False):
     ops = [self.g_tokens, self.atts] if not sampling else [self.multinomial_tokens, self.multinomial_atts]

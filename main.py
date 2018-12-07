@@ -16,9 +16,9 @@ from util import *
 from os.path import expanduser
 HOME = expanduser("~")
 sys.path.append('{}/bert_src/bert_as_service'.format(HOME))
-# from service.client import BertClient
-# bc = BertClient()
-bc = None
+from service.client import BertClient
+bc = BertClient()
+# bc = None
 last_best = 0.0
 file_paths = {}
 
@@ -48,6 +48,8 @@ tf.app.flags.DEFINE_boolean("rl", False, 'whether to add policy gradient')
 tf.app.flags.DEFINE_boolean("neg", False, 'whether to use negative rewards')
 tf.app.flags.DEFINE_boolean("sampling", False, 'whether to use multinomial categorical sampling for rl')
 tf.app.flags.DEFINE_boolean("self_critic", False, 'whether to use self-critic')
+tf.app.flags.DEFINE_boolean("bleu_reward", False, 'whether to use bleu as reward value')
+tf.app.flags.DEFINE_boolean("coverage_reward", False, 'whether to use coverage F1 score as rewards')
 
 tf.app.flags.DEFINE_boolean("load", False, 'whether to load model parameters')
 tf.app.flags.DEFINE_boolean("rouge", False, 'whether to evaluate on ROUGE for validation')
@@ -153,29 +155,28 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
                  'dec_len': [], 'dec_out': [], 'indices': [], 'summaries': []}
   accumulator_sampled = {'dec_in_sampled': [], 'summary_len': [], 'dec_out_sampled': [],
                          'rewards': [], 'real_ids_list': []}
+  
   for e in range(FLAGS.epoch):
     L.info('Training Epoch --%2d--\n' % e)
+    
     for batch_data in dataloader.batch_iter(trainset, FLAGS.batch_size, shuffle=True):
       # print("[main before] counter = {}".format(counter))
       finished, loss_mean, loss_mle, loss_rl, accumulator, accumulator_sampled, counter = \
         model.train(batch_data, sess, train_box_val, bc,
                     rl=rl, vocab=v, neg=FLAGS.neg, discount=FLAGS.discount,
                     sampling=FLAGS.sampling, self_critic=FLAGS.self_critic,
-                    accumulator=accumulator, accumulator_sampled=accumulator_sampled, counter=counter)
+                    accumulator=accumulator, accumulator_sampled=accumulator_sampled, counter=counter,
+                    bleu_rw=FLAGS.bleu_reward, coverage_rw=FLAGS.coverage_reward)
+      
       if not finished:
-        # print("[main not finished] counter = {}".format(counter))
         continue
       else:
-        # print(" !!!!!!!!!!!!!!!!!  prepare finished !!!!!!!!!!!!!!!! counter = {}".format(counter))
-
-        if rl:
-          # loss_mean, loss_mle, loss_rl = model_returns
-          loss_mle_sum += loss_mle
-          loss_rl_sum += loss_rl
-        # else:
-          # loss_mean = model_returns
         loss += loss_mean
         progress_bar(batch%(FLAGS.report * FLAGS.eval_multi), (FLAGS.report * FLAGS.eval_multi))
+
+        if rl:
+          loss_mle_sum += loss_mle
+          loss_rl_sum += loss_rl
 
         if (batch % FLAGS.report == 0):
           cnt = batch//FLAGS.report + FLAGS.cnt
