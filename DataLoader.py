@@ -75,7 +75,6 @@ class DataLoader(object):
 
         if (length > MAX or length < MIN):
           continue
-
         else:
           summary_ids_out.append(list(map(int, summary_id.strip().split(' '))))
           summary_tks_out.append(summary_tk.strip().split(' '))
