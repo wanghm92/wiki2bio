@@ -184,9 +184,17 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
           cnt = batch//FLAGS.report + FLAGS.cnt
           cost_time = time.time() - start_time
           avg_loss = loss / (FLAGS.report*1.0)
-          write_log("%d : avg_loss = %.3f, time = %.3f"% (cnt, avg_loss, cost_time), log_file)
           tfwriter.add_summary(tf_summary_entry('train/loss', avg_loss), cnt)
-          loss, start_time = 0.0, time.time()
+          write_log("%d : avg_loss = %.3f, time = %.3f" % (cnt, avg_loss, cost_time), log_file)
+
+          eval_start_time = time.time()
+          eval_loss = evaluate(sess, dataloader, model)
+          tfwriter.add_summary(tf_summary_entry('valid/loss', eval_loss), cnt)
+          eval_cost_time = time.time() - eval_start_time
+          write_log("%d : eval_loss = %.3f, time = %.3f" % (cnt, eval_loss, eval_cost_time), log_file)
+
+          loss = 0.0
+
           if rl:
             avg_loss_mle = loss_mle_sum / (FLAGS.report*1.0)
             avg_loss_rl = loss_rl_sum / (FLAGS.report*1.0)
@@ -199,10 +207,10 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
           if batch % (FLAGS.report * FLAGS.eval_multi) == 0:
             cnt = batch // (FLAGS.report * FLAGS.eval_multi) + FLAGS.cnt
             ksave_dir = save_model(model, save_dir, cnt)
-            r, b_unk, b_cpy = evaluate(sess, dataloader, model, ksave_dir, 'valid', vocab)
+            ''' Running Evaluation '''
+            r, b_unk, b_cpy = test_metrics(sess, dataloader, model, ksave_dir, 'valid', vocab)
             write_log(r, log_file)
             tfwriter.add_summary(tf_summary_entry('valid/BLEU', b_cpy), cnt)
-            # TODO: log valid loss
 
             for i in range(FLAGS.max_to_keep):
               if b_cpy >= best_bleu[i][1]:
@@ -211,6 +219,9 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
                 with open(rank_file, 'w+') as fout:
                   json.dump(best_bleu, fout, sort_keys=True, indent=4)
                 break
+
+          start_time = time.time()
+
 
 def bleu_score(labels_file, predictions_path):
     bleu_script = '%s/onmt-tf-whm/third_party/multi-bleu.perl'%HOME
@@ -231,10 +242,27 @@ def bleu_score(labels_file, predictions_path):
             "{} script returned non-zero exit code: {}".format(bleu_script, msg))
       return None
 
-def evaluate(*args):
-  return evaluate_both(*args) if FLAGS.rouge else evaluate_bleu(*args)
+def evaluate(sess, dataloader, model):
+  L.info('Begin calculating evalutation loss (mle) ...')
+  evalset = dataloader.dev_set
 
-def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
+  b = 0  # batch counter
+  loss = 0.0
+  data_size = len(evalset[0])
+  num_batches = int(data_size / FLAGS.batch_size) if data_size % FLAGS.batch_size == 0 \
+    else int(data_size / FLAGS.batch_size) + 1
+  L.info('Evaluating by batches ...')
+  for x in dataloader.batch_iter(evalset, FLAGS.batch_size):
+    loss += model.evaluate(x, sess)[0]
+    b += 1
+    progress_bar(b, num_batches)
+
+  return loss / num_batches
+
+def test_metrics(*args):
+  return test_both(*args) if FLAGS.rouge else test_bleu(*args)
+
+def test_bleu(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
   L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
   if mode == 'valid':
     texts_path = valid_path
@@ -255,14 +283,12 @@ def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
 
   k = 0 # instance counter
   b = 0 # batch counter
-  # loss = 0.0
   data_size = len(evalset[0])
   num_batches = int(data_size / FLAGS.batch_size) if data_size % FLAGS.batch_size == 0 \
                             else int(data_size / FLAGS.batch_size) + 1
   L.info('Evaluating by batches ...')
   for x in dataloader.batch_iter(evalset, FLAGS.batch_size):
     predictions, atts = model.generate(x, sess)
-    # loss += l
     atts = np.squeeze(atts)
     idx = 0 #idx within a batch
     b += 1
@@ -302,7 +328,7 @@ def evaluate_bleu(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
 
   return result, bleu_unk, bleu_copy
 
-def evaluate_both(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
+def test_both(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
   L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
   if mode == 'valid':
     texts_path = valid_path
@@ -385,7 +411,7 @@ def evaluate_both(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
 
   return result, bleu_unk, bleu_copy
 
-def evaluate_beam(sess, dataloader, model, ksave_dir, mode='valid', vocab=None, beam_size=1):
+def test_beam(sess, dataloader, model, ksave_dir, mode='valid', vocab=None, beam_size=1):
   L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
   if mode == 'valid':
     texts_path = valid_path
@@ -432,11 +458,11 @@ def evaluate_beam(sess, dataloader, model, ksave_dir, mode='valid', vocab=None, 
 
 def test(sess, dataloader, model, saver, beam_size=FLAGS.beam):
   print("beam_size={}".format(beam_size))
-  v = Vocab()
+  vocab = Vocab()
   if beam_size > 1:
-    result, _, _ = evaluate_beam(sess, dataloader, model, save_dir, 'test', vocab=v, beam_size=beam_size)
+    result, _, _ = test_beam(sess, dataloader, model, save_dir, 'test', vocab=vocab, beam_size=beam_size)
   else:
-    result, _, _ = evaluate(sess, dataloader, model, save_dir, 'test', v)
+    result, _, _ = test_metrics(sess, dataloader, model, save_dir, 'test', vocab)
   print(result)
 
 def main():

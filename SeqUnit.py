@@ -754,6 +754,18 @@ class SeqUnit(object):
 
     return True, loss, loss_mle, loss_rl, None, None, 0
 
+  def evaluate(self, x, sess):
+    loss = sess.run([self.loss_mle],
+                {self.encoder_input:  x['enc_in'],
+                 self.encoder_len:    x['enc_len'],
+                 self.encoder_field:  x['enc_fd'],
+                 self.encoder_pos:    x['enc_pos'],
+                 self.encoder_rpos:   x['enc_rpos'],
+                 self.decoder_input:  x['dec_in'],
+                 self.decoder_len: 	  x['dec_len'],
+                 self.decoder_output: x['dec_out']})
+    return loss
+
   def generate(self, x, sess, sampling=False):
     ops = [self.g_tokens, self.atts] if not sampling else [self.multinomial_tokens, self.multinomial_atts]
     predictions, atts = sess.run(ops,
@@ -767,7 +779,7 @@ class SeqUnit(object):
   def generate_beam(self, x, sess):
     # beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
     beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all = sess.run(
-             [self.beam_seqs,self.beam_probs, self.cand_seqs, self.cand_probs],
+             [self.beam_seqs, self.beam_probs, self.cand_seqs, self.cand_probs],
              {self.encoder_input: x['enc_in'],
               self.encoder_field: x['enc_fd'],
               self.encoder_len:   x['enc_len'],
