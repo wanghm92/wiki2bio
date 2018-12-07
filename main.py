@@ -50,6 +50,7 @@ tf.app.flags.DEFINE_boolean("sampling", False, 'whether to use multinomial categ
 tf.app.flags.DEFINE_boolean("self_critic", False, 'whether to use self-critic')
 tf.app.flags.DEFINE_boolean("bleu_reward", False, 'whether to use bleu as reward value')
 tf.app.flags.DEFINE_boolean("coverage_reward", False, 'whether to use coverage F1 score as rewards')
+tf.app.flags.DEFINE_boolean("pos_rw_only", False, 'whether to use sampled instances with positive rewards only')
 
 tf.app.flags.DEFINE_boolean("load", False, 'whether to load model parameters')
 tf.app.flags.DEFINE_boolean("rouge", False, 'whether to evaluate on ROUGE for validation')
@@ -131,12 +132,7 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
     write_log(f + " = " + v, log_file)
   write_log("#######################################################", log_file)
 
-  v = Vocab()
-  loss, start_time = 0.0, time.time()
-  loss_mle_sum, loss_rl_sum = 0.0, 0.0
   trainset = dataloader.train_set
-  batch = 1
-
   if FLAGS.load:
     # batch = FLAGS.cnt*FLAGS.report + 1
     best_bleu = load_rankings(rank_file)
@@ -150,28 +146,34 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
     train_box_val = open(train_path, 'r').read().strip().split('\n')
     train_box_val = [list(t.strip().split()) for t in train_box_val]
 
+  batch = 0
   counter = 0
-  accumulator = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [], 'dec_in': [],
-                 'dec_len': [], 'dec_out': [], 'indices': [], 'summaries': []}
-  accumulator_sampled = {'dec_in_sampled': [], 'summary_len': [], 'dec_out_sampled': [],
-                         'rewards': [], 'real_ids_list': []}
+  vocab = Vocab()
+  loss, start_time = 0.0, time.time()
+  if rl:
+    loss_mle_sum, loss_rl_sum = 0.0, 0.0
+  accumulator = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [],
+                 'dec_in': [], 'dec_len': [], 'dec_out': [],
+                 'indices': [], 'summaries': [], 'coverage_labels': []}
+  accumulator_sampled = {'rewards': [], 'real_ids_list': [], 'summary_len': []}
   
   for e in range(FLAGS.epoch):
     L.info('Training Epoch --%2d--\n' % e)
     
     for batch_data in dataloader.batch_iter(trainset, FLAGS.batch_size, shuffle=True):
-      # print("[main before] counter = {}".format(counter))
       finished, loss_mean, loss_mle, loss_rl, accumulator, accumulator_sampled, counter = \
         model.train(batch_data, sess, train_box_val, bc,
-                    rl=rl, vocab=v, neg=FLAGS.neg, discount=FLAGS.discount,
+                    rl=rl, vocab=vocab, neg=FLAGS.neg, discount=FLAGS.discount,
                     sampling=FLAGS.sampling, self_critic=FLAGS.self_critic,
                     accumulator=accumulator, accumulator_sampled=accumulator_sampled, counter=counter,
-                    bleu_rw=FLAGS.bleu_reward, coverage_rw=FLAGS.coverage_reward)
+                    bleu_rw=FLAGS.bleu_reward, coverage_rw=FLAGS.coverage_reward,
+                    positive_reward_only=FLAGS.pos_rw_only)
       
       if not finished:
         continue
       else:
         loss += loss_mean
+        batch += 1
         progress_bar(batch%(FLAGS.report * FLAGS.eval_multi), (FLAGS.report * FLAGS.eval_multi))
 
         if rl:
@@ -197,11 +199,10 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
           if batch % (FLAGS.report * FLAGS.eval_multi) == 0:
             cnt = batch // (FLAGS.report * FLAGS.eval_multi) + FLAGS.cnt
             ksave_dir = save_model(model, save_dir, cnt)
-            r, b_unk, b_cpy = evaluate(sess, dataloader, model, ksave_dir, 'valid', v)
+            r, b_unk, b_cpy = evaluate(sess, dataloader, model, ksave_dir, 'valid', vocab)
             write_log(r, log_file)
             tfwriter.add_summary(tf_summary_entry('valid/BLEU', b_cpy), cnt)
-            # tfwriter.add_summary(tf_summary_entry('train/loss', avg_loss), cnt)
-            # tfwriter.add_summary(tf_summary_entry('valid/loss', l_v), cnt)
+            # TODO: log valid loss
 
             for i in range(FLAGS.max_to_keep):
               if b_cpy >= best_bleu[i][1]:
@@ -210,7 +211,6 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
                 with open(rank_file, 'w+') as fout:
                   json.dump(best_bleu, fout, sort_keys=True, indent=4)
                 break
-        batch += 1
 
 def bleu_score(labels_file, predictions_path):
     bleu_script = '%s/onmt-tf-whm/third_party/multi-bleu.perl'%HOME
@@ -472,10 +472,11 @@ def main():
 
 if __name__=='__main__':
   program = os.path.basename(sys.argv[0])
-  print(program)
   L = logging.getLogger(program)
   logging.basicConfig(format='%(asctime)s: %(levelname)s: %(message)s')
   logging.root.setLevel(level=logging.INFO)
   L.info("Running %s" % ' '.join(sys.argv))
   write_log(' '.join(sys.argv), log_file)
+  L.info("alpha={} self_critic={} bleu_reward={} coverage_reward={}, positive_reward_only={}"
+         .format(FLAGS.alpha, FLAGS.self_critic, FLAGS.bleu_reward, FLAGS.coverage_reward, FLAGS.pos_rw_only))
   main()

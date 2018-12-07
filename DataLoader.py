@@ -38,7 +38,7 @@ class DataLoader(object):
     self.man_text_len = 100
     start_time 		  = time.time()
 
-    print('Reading datasets ...')
+    print('Reading datasets from ...')
     print(data_dir)
     print(data_dir_ori)
     self.train_set = self.load_data(self.train_data_path, filter=True)
