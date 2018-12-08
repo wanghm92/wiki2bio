@@ -22,7 +22,7 @@ bc = BertClient()
 last_best = 0.0
 file_paths = {}
 
-suffix='data'
+suffix='small'
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 
@@ -144,7 +144,7 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
   train_box_val = None
   if rl:
     reserved_indices = trainset[-1]
-    print(reserved_indices)
+    # print(reserved_indices)
     train_box_val = open(train_path, 'r').read().strip().split('\n')
     train_box_val = [list(t.strip().split()) for t in train_box_val]
     train_box_val = np.array(train_box_val)[reserved_indices]

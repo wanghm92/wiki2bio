@@ -566,7 +566,8 @@ class SeqUnit(object):
                vocab=None, neg=False, discount=0.0,
                sampling=False, self_critic=False,
                accumulator=None, accumulator_sampled=None, counter=0,
-               bleu_rw=False, coverage_rw=False, positive_reward_only=False):
+               bleu_rw=False, coverage_rw=False, positive_reward_only=False,
+               scaled_coverage_rw=False):
 
     # start_time = time.time()
     if vocab is None: raise ValueError("vocab cannot be None")
@@ -615,7 +616,7 @@ class SeqUnit(object):
       dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
       dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
 
-      return real_sum_list, real_ids_list, summary_len, dec_in_sampled, dec_out_sampled
+      return real_sum_list, real_ids_list, summary_len, dec_in_sampled, dec_out_sampled, max_summary_len
 
     rewards = np.zeros(box_ids.shape[0], dtype=np.float32)
     gold_summary_tks = batch_data['summaries']
@@ -623,7 +624,7 @@ class SeqUnit(object):
 
     '''predictions: [batch, length_decoder], atts: [length_decoder, length_encoder, batch]'''
     prediction_ids, atts = self.generate(batch_data, sess, sampling=sampling)
-    real_sum_list, real_ids_list, summary_len, dec_in_sampled, dec_out_sampled = _replace_unk(prediction_ids, atts)
+    real_sum_list, real_ids_list, summary_len, dec_in_sampled, dec_out_sampled, max_summary_len = _replace_unk(prediction_ids, atts)
 
     if bleu_rw:
       '''bleu_rewards'''
@@ -631,15 +632,17 @@ class SeqUnit(object):
       rewards += bleu_rewards
     if coverage_rw:
       '''coverage_rewards'''
-      # coverage_rewards = get_reward_coverage(train_box_batch, gold_summary_tks, coverage_labels,
-      #                                           real_sum_list, max_summary_len, bc)
-      coverage_rewards = get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list, bc)
-      rewards += coverage_rewards
+      if scaled_coverage_rw:
+        coverage_rewards = get_reward_coverage_v2(train_box_batch, gold_summary_tks, coverage_labels,
+                                                real_sum_list, max_summary_len, bc)
+      else:
+        coverage_rewards = get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list, bc)
+        rewards += coverage_rewards
 
     if self_critic:
       '''predictions: [batch, length_decoder], atts: [length_decoder, length_encoder, batch]'''
       prediction_ids_greedy, atts_greedy = self.generate(batch_data, sess, sampling=False)
-      real_sum_list_greedy, _, _, _, _ = _replace_unk(prediction_ids_greedy, atts_greedy)
+      real_sum_list_greedy, _, _, _, _, max_summary_len_greedy = _replace_unk(prediction_ids_greedy, atts_greedy)
 
       if bleu_rw:
         '''bleu_rewards'''
@@ -647,8 +650,12 @@ class SeqUnit(object):
         rewards -= bleu_rewards_baseline
       if coverage_rw:
         '''coverage_rewards'''
-        coverage_rewards_baseline = get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list_greedy, bc)
-        rewards -= coverage_rewards_baseline
+        if scaled_coverage_rw:
+          coverage_rewards_baseline = get_reward_coverage_v2(train_box_batch, gold_summary_tks, coverage_labels,
+                                                             real_sum_list, max_summary_len_greedy, bc)
+        else:
+          coverage_rewards_baseline = get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list_greedy, bc)
+          rewards -= coverage_rewards_baseline
 
       if positive_reward_only:
         '''train with instances with positive rewards for self-critic'''
