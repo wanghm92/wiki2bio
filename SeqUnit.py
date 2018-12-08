@@ -22,7 +22,7 @@ class SeqUnit(object):
   def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab,field_vocab, position_vocab,
                target_vocab, field_concat, position_concat, fgate_enc, dual_att, encoder_add_pos, decoder_add_pos,
                learning_rate, scope_name, name, start_token=2, stop_token=2, max_length=150,
-               rl=False, loss_alpha=1, beam_size=1, lp_alpha=0.9):
+               rl=False, loss_alpha=1, beam_size=1, lp_alpha=0.9, scaled_coverage_rw=False):
     '''
     batch_size, hidden_size, emb_size, field_size, pos_size:
       size of batch; hidden layer; word/field/position embedding
@@ -77,9 +77,12 @@ class SeqUnit(object):
     self.enc_mask 		  = tf.sign(tf.to_float(self.encoder_pos))
     if rl:
       self.decoder_input_sampled = tf.placeholder(tf.int32, [None, None])
-      self.decoder_len_sampled  = tf.placeholder(tf.int32, [None])
+      self.decoder_len_sampled   = tf.placeholder(tf.int32, [None])
       self.decoder_output_sampled = tf.placeholder(tf.int32, [None, None])
-      self.rewards = tf.placeholder(tf.float32, [None])
+      if scaled_coverage_rw:
+        self.rewards = tf.placeholder(tf.float32, [None, None])
+      else:
+        self.rewards = tf.placeholder(tf.float32, [None])
       self.loss_alpha = tf.constant(self.loss_alpha_value, dtype=tf.float32)
 
     with tf.variable_scope(scope_name):
@@ -184,7 +187,8 @@ class SeqUnit(object):
       neg_log_prob = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=de_outputs_sampled, labels=self.decoder_output_sampled)
       mask_rl = tf.sign(tf.to_float(self.decoder_output_sampled))
       neg_log_prob = mask_rl * neg_log_prob
-      self.loss_rl = tf.reduce_mean(neg_log_prob * tf.expand_dims(self.rewards, axis=-1))  # reward guided loss
+      rewards = self.rewards if scaled_coverage_rw else tf.expand_dims(self.rewards, axis=-1)
+      self.loss_rl = tf.reduce_mean(neg_log_prob * rewards)  # reward guided loss
       self.mean_loss = self.loss_alpha*self.loss_mle + (1-self.loss_alpha) * self.loss_rl
 
     tvars = tf.trainable_variables()
@@ -539,13 +543,14 @@ class SeqUnit(object):
             rl=False, vocab=None, neg=False, discount=0.0,
             sampling=False, self_critic=False,
             accumulator=None, accumulator_sampled=None, counter=0,
-            bleu_rw=False, coverage_rw=False, positive_reward_only=False):
+            bleu_rw=False, coverage_rw=False, positive_reward_only=False, scaled_coverage_rw=False):
     if rl:
       return self.train_rl(x, sess, train_box_val, bc,
                          vocab=vocab, neg=neg, discount=discount,
                          sampling=sampling, self_critic=self_critic,
                          accumulator=accumulator, accumulator_sampled=accumulator_sampled, counter=counter,
-                         bleu_rw=bleu_rw, coverage_rw=coverage_rw, positive_reward_only=positive_reward_only)
+                         bleu_rw=bleu_rw, coverage_rw=coverage_rw,
+                         positive_reward_only=positive_reward_only, scaled_coverage_rw=scaled_coverage_rw)
     else:
       return True, self.train_mle(x, sess), 0, 0, None, None, 0
 
@@ -618,7 +623,8 @@ class SeqUnit(object):
 
       return real_sum_list, real_ids_list, summary_len, dec_in_sampled, dec_out_sampled, max_summary_len
 
-    rewards = np.zeros(box_ids.shape[0], dtype=np.float32)
+    rewards_bleu = np.zeros(box_ids.shape[0], dtype=np.float32)
+    rewards_cov = np.zeros(box_ids.shape[0], dtype=np.float32)
     gold_summary_tks = batch_data['summaries']
     coverage_labels = batch_data['coverage_labels']
 
@@ -629,15 +635,16 @@ class SeqUnit(object):
     if bleu_rw:
       '''bleu_rewards'''
       bleu_rewards = get_reward_bleu(gold_summary_tks, real_sum_list)
-      rewards += bleu_rewards
+      rewards_bleu += bleu_rewards
     if coverage_rw:
       '''coverage_rewards'''
       if scaled_coverage_rw:
-        coverage_rewards = get_reward_coverage_v2(train_box_batch, gold_summary_tks, coverage_labels,
-                                                real_sum_list, max_summary_len, bc)
+        coverage_rewards, coverage_rewards_matrix = get_reward_coverage_v2(train_box_batch, gold_summary_tks,
+                                                                           coverage_labels, real_sum_list,
+                                                                           max_summary_len, bc)
       else:
         coverage_rewards = get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list, bc)
-        rewards += coverage_rewards
+      rewards_cov += coverage_rewards
 
     if self_critic:
       '''predictions: [batch, length_decoder], atts: [length_decoder, length_encoder, batch]'''
@@ -647,16 +654,17 @@ class SeqUnit(object):
       if bleu_rw:
         '''bleu_rewards'''
         bleu_rewards_baseline = get_reward_bleu(gold_summary_tks, real_sum_list_greedy)
-        rewards -= bleu_rewards_baseline
+        rewards_bleu -= bleu_rewards_baseline
       if coverage_rw:
         '''coverage_rewards'''
         if scaled_coverage_rw:
-          coverage_rewards_baseline = get_reward_coverage_v2(train_box_batch, gold_summary_tks, coverage_labels,
-                                                             real_sum_list, max_summary_len_greedy, bc)
+          coverage_rewards_baseline, _ = get_reward_coverage_v2(train_box_batch, gold_summary_tks, coverage_labels,
+                                                                real_sum_list, max_summary_len, bc)
         else:
           coverage_rewards_baseline = get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list_greedy, bc)
-          rewards -= coverage_rewards_baseline
+        rewards_cov -= coverage_rewards_baseline
 
+      rewards = rewards_bleu + rewards_cov
       if positive_reward_only:
         '''train with instances with positive rewards for self-critic'''
 
@@ -670,11 +678,15 @@ class SeqUnit(object):
               accumulator[k].append(l)
 
         # add sampled instance pairs with positive rewards to accumulator_sampled
-        for r, real_ids, l in zip(rewards, real_ids_list, summary_len):
+        for idx, (r, rb, rc, real_ids, l) in enumerate(zip(rewards, rewards_bleu, rewards_cov, real_ids_list, summary_len)):
           if r > 0.0:
             accumulator_sampled['real_ids_list'].append(real_ids)
             accumulator_sampled['summary_len'].append(l)
             accumulator_sampled['rewards'].append(r)
+            if scaled_coverage_rw:
+              accumulator_sampled['rewards_bleu'].append(rb)
+              accumulator_sampled['rewards_cov'].append(rc)
+              accumulator_sampled['reward_matrix'].append(coverage_rewards_matrix[idx])
 
         # go back and fetch the next batch if instance with positive rewards do not make a full batch yet
         if counter < self.batch_size:
@@ -684,9 +696,20 @@ class SeqUnit(object):
           max_summary_len = max(accumulator_sampled['summary_len'])
           summary_len = np.array(accumulator_sampled['summary_len'], dtype=np.int32)
           real_ids_list = accumulator_sampled['real_ids_list']
+          coverage_rewards_matrix = accumulator_sampled['reward_matrix']
           dec_in_sampled = np.array([ids + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
           dec_out_sampled = np.array([ids + [2] + [0] * (max_summary_len - len(ids)) for ids in real_ids_list], dtype=np.float32)
           rewards = np.array(accumulator_sampled['rewards'], dtype=np.float32)
+          if scaled_coverage_rw:
+            # print(max_summary_len)
+            # print([len(x) for x in coverage_rewards_matrix])
+            # coverage_rewards_matrix = np.array([x + [0] * (max_summary_len + 1 - len(ids)) for ids in coverage_rewards_matrix], dtype=np.float32)
+            coverage_rewards_matrix = np.array([np.pad(x, (0, max_summary_len + 1 - len(x)), 'constant') for x in coverage_rewards_matrix], dtype=np.float32)
+            rewards_cov_exp = np.expand_dims(np.array(accumulator_sampled['rewards_cov'], dtype=np.float32), axis=-1)
+            rewards_cov_scaled = coverage_rewards_matrix * rewards_cov_exp
+            rewards_bleu_tiled = np.tile(np.array(accumulator_sampled['rewards_bleu'], dtype=np.float32),
+                                       [coverage_rewards_matrix.shape[-1], 1]).T
+            rewards = rewards_bleu_tiled + rewards_cov_scaled
 
           # padding gold instances: encoder side
           max_encoder_len_padded = max([len(v) for v in accumulator['enc_in']])
@@ -742,7 +765,8 @@ class SeqUnit(object):
           accumulator = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [],
                          'dec_in': [], 'dec_len': [], 'dec_out': [],
                          'indices': [], 'summaries': [], 'coverage_labels': []}
-          accumulator_sampled = {'rewards': [], 'real_ids_list': [], 'summary_len': []}
+          accumulator_sampled = {'rewards': [], 'real_ids_list': [], 'summary_len': [],
+                                 'reward_matrix': [], 'rewards_bleu': [], 'rewards_cov': []}
 
           return True, loss, loss_mle, loss_rl, accumulator, accumulator_sampled, 0
 

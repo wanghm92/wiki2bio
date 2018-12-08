@@ -216,20 +216,20 @@ def get_reward_coverage_v2(train_box_batch, gold_summary_tks, coverage_labels, r
         # print('-'*50+'\n')
         reward_matrix.append(rewards)
 
-    reward_matrix = [np.pad(ids, (0, max_summary_len + 1 - len(ids)), 'constant') for ids in reward_matrix]
+    # reward_matrix = [np.pad(ids, (0, max_summary_len + 1 - len(ids)), 'constant') for ids in reward_matrix]
 
-    reward_matrix = np.array(reward_matrix, dtype=np.float32)
+    # reward_matrix = np.array(reward_matrix, dtype=np.float32)
     # print('reward_matrix')
     # print(reward_matrix.shape)
     # print(reward_matrix)
     reward_list = np.array(reward_list, dtype=np.float32)
-    reward_list = np.expand_dims(reward_list, axis=-1)
+    # reward_list_exp = np.expand_dims(reward_list, axis=-1)
     # print('reward_list')
     # print(reward_list.shape)
     # print(reward_list)
 
-    final_rewards = reward_matrix*reward_list
-    return final_rewards
+    # final_rewards = reward_matrix*reward_list_exp
+    return reward_list, reward_matrix
 
 
 def get_reward_bleu(gold_summary_tks, real_sum_list):

@@ -22,7 +22,7 @@ bc = BertClient()
 last_best = 0.0
 file_paths = {}
 
-suffix='small'
+suffix='data'
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 
@@ -52,6 +52,7 @@ tf.app.flags.DEFINE_boolean("self_critic", False, 'whether to use self-critic')
 tf.app.flags.DEFINE_boolean("bleu_reward", False, 'whether to use bleu as reward value')
 tf.app.flags.DEFINE_boolean("coverage_reward", False, 'whether to use coverage F1 score as rewards')
 tf.app.flags.DEFINE_boolean("pos_rw_only", False, 'whether to use sampled instances with positive rewards only')
+tf.app.flags.DEFINE_boolean("scaled_coverage_rw", False, 'whether to use sampled instances with positive rewards only')
 
 tf.app.flags.DEFINE_boolean("load", False, 'whether to load model parameters')
 tf.app.flags.DEFINE_boolean("rouge", False, 'whether to evaluate on ROUGE for validation')
@@ -159,7 +160,8 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
   accumulator = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [],
                  'dec_in': [], 'dec_len': [], 'dec_out': [],
                  'indices': [], 'summaries': [], 'coverage_labels': []}
-  accumulator_sampled = {'rewards': [], 'real_ids_list': [], 'summary_len': []}
+  accumulator_sampled = {'rewards': [], 'real_ids_list': [], 'summary_len': [],
+                         'reward_matrix': [], 'rewards_bleu': [], 'rewards_cov': []}
   
   for e in range(FLAGS.epoch):
     L.info('Training Epoch --%2d--\n' % e)
@@ -171,7 +173,7 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
                     sampling=FLAGS.sampling, self_critic=FLAGS.self_critic,
                     accumulator=accumulator, accumulator_sampled=accumulator_sampled, counter=counter,
                     bleu_rw=FLAGS.bleu_reward, coverage_rw=FLAGS.coverage_reward,
-                    positive_reward_only=FLAGS.pos_rw_only)
+                    positive_reward_only=FLAGS.pos_rw_only, scaled_coverage_rw=FLAGS.scaled_coverage_rw)
       
       if not finished:
         continue
@@ -486,7 +488,7 @@ def main():
             decoder_add_pos=FLAGS.decoder_pos, encoder_add_pos=FLAGS.encoder_pos,
             learning_rate=FLAGS.learning_rate, max_length=FLAGS.max_length,
             rl=FLAGS.rl, loss_alpha=FLAGS.alpha,
-            beam_size=FLAGS.beam)
+            beam_size=FLAGS.beam, scaled_coverage_rw=FLAGS.scaled_coverage_rw)
     sess.run(tf.global_variables_initializer())
     saver = tf.train.Saver(max_to_keep=1000)
 
