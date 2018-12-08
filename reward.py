@@ -101,6 +101,7 @@ def get_reward(train_box_batch, gold_summary_tks, real_sum_list, max_summary_len
 
 
 def get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list, bert_server):
+    """ content word coverage F1 score as reward """
     pred_token_lists = [[_convert_back_to_brackets(y.decode('utf-8')) for y in x] for x in real_sum_list]
     pred_sentences = [' '.join(x) for x in pred_token_lists]
     # print(pred_sentences)
@@ -112,36 +113,123 @@ def get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list, bert_s
             in enumerate(zip(gold_summary_tks, coverage_labels, pred_token_lists, result, mask)):
 
         binary_labels = [l for l, m in zip(labels, binary_switch) if m == 1]
-        gold_set = dict.fromkeys([x for x, y in zip(gold, coverage) if y == 1])
-
-        num = len(pred_tokens)
         try:
             assert len(pred_tokens) == len(binary_labels)
         except AssertionError:
             rewards.append(0.0)
             continue
 
-        true_positive, false_negative, false_positive, true_negative = 0.0, 0.0, 0.0, 0.0
-        for tk, lb in zip(pred_tokens, binary_labels):
-            if lb == 1:
-                if gold_set.has_key(tk):
-                    true_positive += 1.0
-                else:
-                    false_positive += 1.0
-            else:
-                if gold_set.has_key(tk):
-                    false_negative += 1.0
-                else:
-                    true_negative += 1.0
+        gold_set = set([x for x, y in zip(gold, coverage) if y == 1])
+        pred_set = set([x for x, y in zip(pred_tokens, binary_labels) if y == 1])
 
-        positives = true_positive + false_positive
-        precision = true_positive / positives if positives > 0.0 else 0.0
-        recall = true_positive / num if num > 0.0 else 0.0
+        intersection = gold_set.intersection(pred_set)
+        precision = float(len(intersection)) / float(len(pred_set)) if len(pred_set) > 0 else 0.0
+        recall = float(len(intersection)) / float(len(gold_set)) if len(gold_set) > 0 else 0.0
         denominator = precision + recall
         f1 = 2*precision*recall/denominator if denominator > 0.0 else 0.0
         rewards.append(f1)
 
     return np.array(rewards, dtype=np.float32)
+
+
+def get_reward_coverage_v2(train_box_batch, gold_summary_tks, coverage_labels, real_sum_list, max_summary_len, bert_server):
+
+    POS = 1.0
+    NEU = 0.0
+    NEG = 0.0
+
+    def _check_in_box(label, token, lemma, box_dict, box_lemma_dict):
+        if label != 1:
+            return NEU
+        else:
+            has_token = box_dict.has_key(token)
+            has_lemma = box_lemma_dict.has_key(lemma)
+            return POS if has_token or has_lemma else NEG
+
+    pred_token_lists = [[_convert_back_to_brackets(y.decode('utf-8')) for y in x] for x in real_sum_list]
+    pred_sentences = [' '.join(x) for x in pred_token_lists]
+    # print("pred_sentences")
+    # for p, b in zip(pred_sentences, train_box_batch):
+        # print(b)
+        # print(p)
+    result, mask = bert_server.encode(pred_sentences) # [batch, 64]
+    assert result.shape == mask.shape
+
+    reward_list = []
+    reward_matrix = []
+
+    for batch, (gold, coverage, pred_tokens, labels, binary_switch) \
+            in enumerate(zip(gold_summary_tks, coverage_labels, pred_token_lists, result, mask)):
+
+        train_box = [x.decode('utf-8') for x in train_box_batch[batch]]
+        # print('train_box')
+        # print(train_box)
+        box_dict = dict.fromkeys(train_box)
+        box_lemmas = [nlp(x)[0].lemma_ for x in train_box]
+        box_lemma_dict = dict.fromkeys(box_lemmas)
+        # print(box_dict)
+        # print(box_lemma_dict)
+
+        binary_labels = [l for l, m in zip(labels, binary_switch) if m == 1]
+        # print('binary_labels')
+        # print(binary_labels)
+        try:
+            assert len(pred_tokens) == len(binary_labels)
+        except AssertionError:
+            reward_list.append(0.0)
+            reward_matrix.append([NEG])
+
+            # print('pred_tokens')
+            # print(len(pred_tokens))
+            # print(pred_tokens)
+            # print('binary_labels')
+            # print(len(binary_labels))
+            # print(binary_labels)
+            continue
+
+        gold_set = set([x for x, y in zip(gold, coverage) if y == 1])
+        pred_set = set([x for x, y in zip(pred_tokens, binary_labels) if y == 1])
+        # print('gold_set')
+        # print(gold_set)
+        # print('pred_set')
+        # print(pred_set)
+
+        intersection = gold_set.intersection(pred_set)
+        precision = float(len(intersection)) / float(len(pred_set)) if len(pred_set) > 0 else 0.0
+        recall = float(len(intersection)) / float(len(gold_set)) if len(gold_set) > 0 else 0.0
+        denominator = precision + recall
+        f1 = 2.0*precision*recall/denominator if denominator > 0.0 else 0.0
+        reward_list.append(f1)
+
+        sampled_tokens = [x.decode('utf-8') for x in real_sum_list[batch]]
+        sampled_lemmas = [nlp(x)[0].lemma_ for x in sampled_tokens]
+        # print('sampled_tokens')
+        # print(sampled_tokens)
+        # print('sampled_lemmas')
+        # print(sampled_lemmas)
+        rewards = [_check_in_box(l, tk, lm, box_dict, box_lemma_dict)
+                  for l, tk, lm in zip(binary_labels, sampled_tokens, sampled_lemmas)]
+        rewards.append(NEG) # for eos
+
+        # print('rewards')
+        # print(rewards)
+        # print('-'*50+'\n')
+        reward_matrix.append(rewards)
+
+    reward_matrix = [np.pad(ids, (0, max_summary_len + 1 - len(ids)), 'constant') for ids in reward_matrix]
+
+    reward_matrix = np.array(reward_matrix, dtype=np.float32)
+    # print('reward_matrix')
+    # print(reward_matrix.shape)
+    # print(reward_matrix)
+    reward_list = np.array(reward_list, dtype=np.float32)
+    reward_list = np.expand_dims(reward_list, axis=-1)
+    # print('reward_list')
+    # print(reward_list.shape)
+    # print(reward_list)
+
+    final_rewards = reward_matrix*reward_list
+    return final_rewards
 
 
 def get_reward_bleu(gold_summary_tks, real_sum_list):

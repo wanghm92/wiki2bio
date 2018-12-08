@@ -65,11 +65,13 @@ class DataLoader(object):
       poses 	  = poses[:self.limits]
       rposes 	  = rposes[:self.limits]
 
+    reserved_indices = []
     if filter:
-      summary_ids_out, texts_out, fields_out, poses_out, rposes_out, coverage_lbs_out, summary_tks_out = [], [], [], [], [], [], []
+      summary_ids_out, texts_out, fields_out, poses_out, rposes_out, \
+      coverage_lbs_out, summary_tks_out = [], [], [], [], [], [], []
 
-      for summary_id, summary_tk, coverage_lb, text, field, pos, rpos \
-              in zip(summary_ids, summary_tks, coverage_lbs, texts, fields, poses, rposes):
+      for idx, (summary_id, summary_tk, coverage_lb, text, field, pos, rpos) \
+              in enumerate(zip(summary_ids, summary_tks, coverage_lbs, texts, fields, poses, rposes)):
 
         length = len(summary_id.strip().split(' '))
 
@@ -83,7 +85,7 @@ class DataLoader(object):
           fields_out.append(list(map(int, field.strip().split(' '))))
           poses_out.append(list(map(int, pos.strip().split(' '))))
           rposes_out.append(list(map(int, rpos.strip().split(' '))))
-
+          reserved_indices.append(idx)
     else:
       summary_ids_out = [list(map(int, summary.strip().split(' '))) for summary in summary_ids]
       summary_tks_out = [summary.strip().split(' ') for summary in summary_tks]
@@ -93,10 +95,11 @@ class DataLoader(object):
       poses_out 	  = [list(map(int, pos.strip().split(' ')))     for pos in poses]
       rposes_out 	  = [list(map(int, rpos.strip().split(' ')))    for rpos in rposes]
 
-    return summary_ids_out, texts_out, fields_out, poses_out, rposes_out, summary_tks_out, coverage_lbs_out
+    return summary_ids_out, texts_out, fields_out, poses_out, rposes_out, \
+           summary_tks_out, coverage_lbs_out, reserved_indices
 
   def batch_iter(self, data, batch_size, shuffle=False):
-    summary_ids, texts, fields, poses, rposes, summary_tks, coverage_lbs = data
+    summary_ids, texts, fields, poses, rposes, summary_tks, coverage_lbs, _ = data
 
     data_size 	= len(summary_ids)
     num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \

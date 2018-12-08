@@ -12,7 +12,7 @@ from dualAttentionUnit import dualAttentionWrapper
 from LstmUnit import LstmUnit
 from fgateLstmUnit import fgateLstmUnit
 from OutputUnit import OutputUnit
-from reward import get_reward, get_reward_bleu, get_reward_coverage
+from reward import get_reward, get_reward_bleu, get_reward_coverage, get_reward_coverage_v2
 import numpy as np
 
 # POS = 1.5
@@ -575,7 +575,7 @@ class SeqUnit(object):
 
     box_ids          = batch_data['enc_in']
     sample_indices   = batch_data['indices']
-    train_box_batch = [train_box_val[i] for i in sample_indices]
+    train_box_batch = train_box_val[sample_indices]
 
     def _replace_unk(target_prediction_ids, target_atts):
       """replace UNK with input word with highest attention weight"""
@@ -618,7 +618,7 @@ class SeqUnit(object):
       return real_sum_list, real_ids_list, summary_len, dec_in_sampled, dec_out_sampled
 
     rewards = np.zeros(box_ids.shape[0], dtype=np.float32)
-    gold_summary_tk = batch_data['summaries']
+    gold_summary_tks = batch_data['summaries']
     coverage_labels = batch_data['coverage_labels']
 
     '''predictions: [batch, length_decoder], atts: [length_decoder, length_encoder, batch]'''
@@ -627,11 +627,13 @@ class SeqUnit(object):
 
     if bleu_rw:
       '''bleu_rewards'''
-      bleu_rewards = get_reward_bleu(gold_summary_tk, real_sum_list)
+      bleu_rewards = get_reward_bleu(gold_summary_tks, real_sum_list)
       rewards += bleu_rewards
     if coverage_rw:
       '''coverage_rewards'''
-      coverage_rewards = get_reward_coverage(gold_summary_tk, coverage_labels, real_sum_list, bc)
+      # coverage_rewards = get_reward_coverage(train_box_batch, gold_summary_tks, coverage_labels,
+      #                                           real_sum_list, max_summary_len, bc)
+      coverage_rewards = get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list, bc)
       rewards += coverage_rewards
 
     if self_critic:
@@ -641,11 +643,11 @@ class SeqUnit(object):
 
       if bleu_rw:
         '''bleu_rewards'''
-        bleu_rewards_baseline = get_reward_bleu(gold_summary_tk, real_sum_list_greedy)
+        bleu_rewards_baseline = get_reward_bleu(gold_summary_tks, real_sum_list_greedy)
         rewards -= bleu_rewards_baseline
       if coverage_rw:
         '''coverage_rewards'''
-        coverage_rewards_baseline = get_reward_coverage(gold_summary_tk, coverage_labels, real_sum_list_greedy, bc)
+        coverage_rewards_baseline = get_reward_coverage(gold_summary_tks, coverage_labels, real_sum_list_greedy, bc)
         rewards -= coverage_rewards_baseline
 
       if positive_reward_only:
