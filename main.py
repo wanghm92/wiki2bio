@@ -40,6 +40,7 @@ tf.app.flags.DEFINE_integer("report", 500, 'report losses after some steps')
 tf.app.flags.DEFINE_integer("eval_multi", 5, 'report valid results after some steps')
 tf.app.flags.DEFINE_integer("max_to_keep", 5, 'maximum number of checkpoints to save')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003, 'learning rate')
+tf.app.flags.DEFINE_integer("max_length", 100, 'maximum decoding length')
 
 tf.app.flags.DEFINE_float("alpha", 0.9, 'percentage of MLE loss')
 tf.app.flags.DEFINE_float("discount", 0.0, 'discount factor for cummulative rewards, default: not use')
@@ -482,8 +483,8 @@ def main():
             scope_name="seq2seq", name="seq2seq",
             field_concat=FLAGS.field, position_concat=FLAGS.position,
             fgate_enc=FLAGS.fgate_encoder, dual_att=FLAGS.dual_attention,
-            decoder_add_pos=FLAGS.decoder_pos,
-            encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
+            decoder_add_pos=FLAGS.decoder_pos, encoder_add_pos=FLAGS.encoder_pos,
+            learning_rate=FLAGS.learning_rate, max_length=FLAGS.max_length,
             rl=FLAGS.rl, loss_alpha=FLAGS.alpha,
             beam_size=FLAGS.beam)
     sess.run(tf.global_variables_initializer())
