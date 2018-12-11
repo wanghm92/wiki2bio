@@ -22,7 +22,7 @@ bc = BertClient()
 last_best = 0.0
 file_paths = {}
 
-suffix='data'
+suffix='small'
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 

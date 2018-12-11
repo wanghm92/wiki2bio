@@ -390,7 +390,6 @@ class SeqUnit(object):
       time_1 = tf.constant(1, dtype=tf.int32)
       beam_seqs_0 = tf.constant([[self.start_token]]*beam_size)
       beam_probs_0 = tf.constant([0.]*beam_size)
-      finished_1 = tf.constant([False]*beam_size, dtype=tf.bool)
 
       cand_seqs_0 = tf.constant([[self.start_token]])
       cand_probs_0 = tf.constant([-3e38])
@@ -447,15 +446,15 @@ class SeqUnit(object):
       part_state_1.set_shape((None, None))
       next_states = (part_state_0, part_state_1)
       # print(next_states[0].get_shape().as_list())
-      return next_beam_seqs, next_beam_probs, next_cand_seqs, next_cand_probs, next_states, finished_1, time_1
+      return next_beam_seqs, next_beam_probs, next_cand_seqs, next_cand_probs, next_states, time_1
 
-    beam_seqs_1, beam_probs_1, cand_seqs_1, cand_probs_1, states_1, finished_1, time_1 = beam_init()
+    beam_seqs_1, beam_probs_1, cand_seqs_1, cand_probs_1, states_1, time_1 = beam_init()
     beam_seqs_1.set_shape((None, None))
     beam_probs_1.set_shape((None,))
     cand_seqs_1.set_shape((None, None))
     cand_probs_1.set_shape((None,))
     # states_1.set_shape((2, None, self.hidden_size))
-    def beam_step(beam_seqs, beam_probs, cand_seqs, cand_probs, states, finished, time):
+    def beam_step(beam_seqs, beam_probs, cand_seqs, cand_probs, states, time):
       '''
       beam_seqs : [beam_size, time]
       beam_probs: [beam_size, ]
@@ -515,18 +514,14 @@ class SeqUnit(object):
       next_cand_probs, next_cand_indices = tf.nn.top_k(new_cand_probs, k=cand_k)
       next_cand_seqs = tf.gather(new_cand_seqs, next_cand_indices)
 
-      finished = tf.logical_or(finished, tf.equal(next_cand_indices, self.stop_token))
-      finished = tf.logical_or(finished, tf.greater_equal(time, self.max_length))
+      return next_beam_seqs, next_beam_probs, next_cand_seqs, next_cand_probs, next_states, time+1
 
-      return next_beam_seqs, next_beam_probs, next_cand_seqs, next_cand_probs, next_states, finished, time+1
-
-    def beam_cond(beam_probs, beam_seqs, cand_probs, cand_seqs, state, finished, time):
-      # length = (tf.reduce_max(beam_probs) >= tf.reduce_min(cand_probs))
-      # return tf.logical_and(length, tf.less(time, 64))
-      return tf.logical_not(tf.reduce_all(finished))
+    def beam_cond(beam_probs, beam_seqs, cand_probs, cand_seqs, state, time):
+      length = (tf.reduce_max(beam_probs) >= tf.reduce_min(cand_probs))
+      return tf.logical_and(length, tf.less(time, 60))
       # return tf.less(time, 18)
 
-    loop_vars = [beam_seqs_1, beam_probs_1, cand_seqs_1, cand_probs_1, states_1, finished_1, time_1]
+    loop_vars = [beam_seqs_1, beam_probs_1, cand_seqs_1, cand_probs_1, states_1, time_1]
     ret_vars = tf.while_loop(
       cond=beam_cond,
       body=beam_step,
@@ -537,11 +532,10 @@ class SeqUnit(object):
         tf.TensorShape([None, None]),
         cand_probs_1.get_shape(),
         (tf.TensorShape([None, None]), tf.TensorShape([None, None])),
-        cand_probs_1.get_shape(),
         time_1.get_shape()
       ],
       back_prop=False)
-    beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all, _, _,  time_all = ret_vars
+    beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all, _, time_all = ret_vars
 
     return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
