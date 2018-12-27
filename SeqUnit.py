@@ -556,15 +556,21 @@ class SeqUnit(object):
 
 
   def train_mle(self, x, sess):
-    loss,  _ = sess.run([self.mean_loss, self.train_op],
-                {self.encoder_input:  x['enc_in'],
+    feed_dict = {self.encoder_input:  x['enc_in'],
                  self.encoder_len:    x['enc_len'],
-                 self.encoder_field:  x['enc_fd'],
-                 self.encoder_pos:    x['enc_pos'],
-                 self.encoder_rpos:   x['enc_rpos'],
                  self.decoder_input:  x['dec_in'],
                  self.decoder_len: 	  x['dec_len'],
-                 self.decoder_output: x['dec_out']})
+                 self.decoder_output: x['dec_out']}
+
+    if self.field_concat:
+      feed_dict[self.encoder_field] = x['enc_fd']
+
+    if self.position_concat:
+      feed_dict[self.encoder_pos] = x['enc_pos']
+      feed_dict[self.encoder_rpos] = x['enc_rpos']
+
+    loss, _ = sess.run([self.mean_loss, self.train_op], feed_dict=feed_dict)
+
     return loss
 
   def train_rl(self, batch_data, sess, train_box_val, bc,
@@ -788,36 +794,55 @@ class SeqUnit(object):
     return True, loss, loss_mle, loss_rl, None, None, 0
 
   def evaluate(self, x, sess):
-    loss = sess.run([self.loss_mle],
-                {self.encoder_input:  x['enc_in'],
+
+    feed_dict = {self.encoder_input:  x['enc_in'],
                  self.encoder_len:    x['enc_len'],
-                 self.encoder_field:  x['enc_fd'],
-                 self.encoder_pos:    x['enc_pos'],
-                 self.encoder_rpos:   x['enc_rpos'],
                  self.decoder_input:  x['dec_in'],
                  self.decoder_len: 	  x['dec_len'],
-                 self.decoder_output: x['dec_out']})
-    return loss
+                 self.decoder_output: x['dec_out']}
+
+    if self.field_concat:
+      feed_dict[self.encoder_field] = x['enc_fd']
+
+    if self.position_concat:
+      feed_dict[self.encoder_pos] = x['enc_pos']
+      feed_dict[self.encoder_rpos] = x['enc_rpos']
+
+    return sess.run([self.loss_mle], feed_dict=feed_dict)
 
   def generate(self, x, sess, sampling=False):
     ops = [self.g_tokens, self.atts] if not sampling else [self.multinomial_tokens, self.multinomial_atts]
-    predictions, atts = sess.run(ops,
-                   {self.encoder_input: x['enc_in'],
-                    self.encoder_len:   x['enc_len'],
-                    self.encoder_field: x['enc_fd'],
-                    self.encoder_pos:   x['enc_pos'],
-                    self.encoder_rpos:  x['enc_rpos']})
+
+    feed_dict = {self.encoder_input:  x['enc_in'],
+                 self.encoder_len:    x['enc_len']}
+
+    if self.field_concat:
+      feed_dict[self.encoder_field] = x['enc_fd']
+
+    if self.position_concat:
+      feed_dict[self.encoder_pos] = x['enc_pos']
+      feed_dict[self.encoder_rpos] = x['enc_rpos']
+
+    predictions, atts = sess.run(ops, feed_dict=feed_dict)
+
     return predictions, atts
 
   def generate_beam(self, x, sess):
     # beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
+
+    feed_dict = {self.encoder_input: x['enc_in'],
+                 self.encoder_len: x['enc_len']}
+
+    if self.field_concat:
+      feed_dict[self.encoder_field] = x['enc_fd']
+
+    if self.position_concat:
+      feed_dict[self.encoder_pos] = x['enc_pos']
+      feed_dict[self.encoder_rpos] = x['enc_rpos']
+
     beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all = sess.run(
-             [self.beam_seqs, self.beam_probs, self.cand_seqs, self.cand_probs],
-             {self.encoder_input: x['enc_in'],
-              self.encoder_field: x['enc_fd'],
-              self.encoder_len:   x['enc_len'],
-              self.encoder_pos:   x['enc_pos'],
-              self.encoder_rpos:  x['enc_rpos']})
+             [self.beam_seqs, self.beam_probs, self.cand_seqs, self.cand_probs], feed_dict = feed_dict)
+
     return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
   def save(self, path):

@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# @Time    : 17-4-27 下午8:43
-# @Author  : Tianyu Liu
 
 import time
 from DataLoader import DataLoader

@@ -8,8 +8,11 @@ import sys, os, time, logging, json, tqdm, io, subprocess, math
 import tensorflow as tf
 import numpy as np
 from SeqUnit import *
+
 # from DataLoader import DataLoader
-from DataLoader_table2skeleton import DataLoader_t2s as DataLoader
+# from DataLoader_table2skeleton import DataLoader_t2s as DataLoader
+from DataLoader_skeleton2texts import DataLoader_s2t as DataLoader
+
 from PythonROUGE import PythonROUGE
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 from preprocess import *
