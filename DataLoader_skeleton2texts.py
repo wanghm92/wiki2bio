@@ -52,7 +52,7 @@ class DataLoader_s2t(object):
 
           for idx, (summary_id, summary_tk, text) in enumerate(zip(summary_ids, summary_tks, texts)):
 
-              length = len(summary_id.strip().split(' '))
+              length = len(text.strip().split(' '))
 
               if (length > MAX or length < MIN):
                   continue

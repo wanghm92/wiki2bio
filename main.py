@@ -10,8 +10,8 @@ import numpy as np
 from SeqUnit import *
 
 # from DataLoader import DataLoader
-# from DataLoader_table2skeleton import DataLoader_t2s as DataLoader
-from DataLoader_skeleton2texts import DataLoader_s2t as DataLoader
+from DataLoader_table2skeleton import DataLoader_t2s as DataLoader
+# from DataLoader_skeleton2texts import DataLoader_s2t as DataLoader
 
 from PythonROUGE import PythonROUGE
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
@@ -57,6 +57,8 @@ tf.app.flags.DEFINE_boolean("bleu_reward", False, 'whether to use bleu as reward
 tf.app.flags.DEFINE_boolean("coverage_reward", False, 'whether to use coverage F1 score as rewards')
 tf.app.flags.DEFINE_boolean("pos_rw_only", False, 'whether to use sampled instances with positive rewards only')
 tf.app.flags.DEFINE_boolean("scaled_coverage_rw", False, 'whether to use sampled instances with positive rewards only')
+
+tf.app.flags.DEFINE_boolean("out_vocab_mask", False, '')
 
 tf.app.flags.DEFINE_boolean("load", False, 'whether to load model parameters')
 tf.app.flags.DEFINE_boolean("rouge", False, 'whether to evaluate on ROUGE for validation')
@@ -143,7 +145,7 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
     # batch = FLAGS.cnt*FLAGS.report + 1
     best_bleu = load_rankings(rank_file)
     print('Rankings loaded from %s'%rank_file)
-    print('initial batch = %d'%(FLAGS.cnt*FLAGS.report))
+    print('initial batch = %d'%(FLAGS.cnt*FLAGS.report*FLAGS.eval_multi))
   else:
     best_bleu = dict([(i, ('ep0', 0, 0)) for i in range(FLAGS.max_to_keep)])
 
@@ -276,11 +278,11 @@ def test_bleu(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
   L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
   if mode == 'valid':
     texts_path = valid_path
-    gold_path = gold_path_valid
+    gold_path = dataloader.dev_data_path[-1]
     evalset = dataloader.dev_set
   else:
     texts_path = test_path
-    gold_path = gold_path_test
+    gold_path = dataloader.test_data_path[-1]
     evalset = dataloader.test_set
 
   # for copy words from the infoboxes
@@ -492,7 +494,9 @@ def main():
             dual_att_add_pos=FLAGS.dual_att_pos, encoder_add_pos=FLAGS.encoder_pos,
             learning_rate=FLAGS.learning_rate, max_length=FLAGS.max_length,
             rl=FLAGS.rl, loss_alpha=FLAGS.alpha,
-            beam_size=FLAGS.beam, scaled_coverage_rw=FLAGS.scaled_coverage_rw)
+            beam_size=FLAGS.beam, scaled_coverage_rw=FLAGS.scaled_coverage_rw,
+            out_vocab_mask=FLAGS.out_vocab_mask)
+
     sess.run(tf.global_variables_initializer())
     saver = tf.train.Saver(max_to_keep=1000)
 

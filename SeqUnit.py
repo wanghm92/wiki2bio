@@ -22,7 +22,7 @@ class SeqUnit(object):
   def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab,field_vocab, position_vocab,
                target_vocab, field_concat, position_concat, fgate_enc, dual_att, encoder_add_pos, dual_att_add_pos,
                learning_rate, scope_name, name, start_token=2, stop_token=2, max_length=150,
-               rl=False, loss_alpha=1, beam_size=1, lp_alpha=0.9, scaled_coverage_rw=False):
+               rl=False, loss_alpha=1, beam_size=1, lp_alpha=0.9, scaled_coverage_rw=False, out_vocab_mask=False):
     '''
     batch_size, hidden_size, emb_size, field_size, pos_size:
       size of batch; hidden layer; word/field/position embedding
@@ -94,7 +94,7 @@ class SeqUnit(object):
         print('normal encoder LSTM')
         self.enc_lstm = LstmUnit(self.hidden_size, self.uni_size, 'encoder_lstm')
       self.dec_lstm = LstmUnit(self.hidden_size, self.emb_size, 'decoder_lstm')
-      self.dec_out  = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output')
+      self.dec_out  = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output', out_vocab_mask=out_vocab_mask)
 
     self.units.update({'encoder_lstm': self.enc_lstm,'decoder_lstm': self.dec_lstm,
                'decoder_output': self.dec_out})
