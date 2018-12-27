@@ -8,7 +8,8 @@ import sys, os, time, logging, json, tqdm, io, subprocess, math
 import tensorflow as tf
 import numpy as np
 from SeqUnit import *
-from DataLoader import DataLoader
+# from DataLoader import DataLoader
+from DataLoader_table2skeleton import DataLoader_t2s as DataLoader
 from PythonROUGE import PythonROUGE
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 from preprocess import *
@@ -16,9 +17,9 @@ from util import *
 from os.path import expanduser
 HOME = expanduser("~")
 sys.path.append('{}/bert_src/bert_as_service'.format(HOME))
-from service.client import BertClient
-bc = BertClient()
-# bc = None
+# from service.client import BertClient
+# bc = BertClient()
+bc = None
 last_best = 0.0
 file_paths = {}
 
@@ -68,8 +69,8 @@ tf.app.flags.DEFINE_boolean("fgate_encoder", False,'add field gate in encoder ls
 
 tf.app.flags.DEFINE_boolean("field", True,'concat field information to word embedding')
 tf.app.flags.DEFINE_boolean("position",True,'concat position information to word embedding')
-tf.app.flags.DEFINE_boolean("encoder_pos",True,'position info in field-gated encoder')
-tf.app.flags.DEFINE_boolean("decoder_pos",True,'position info in dual attention decoder')
+tf.app.flags.DEFINE_boolean("encoder_pos",False,'position info in field-gated encoder')
+tf.app.flags.DEFINE_boolean("dual_att_pos",True,'position info in dual attention decoder')
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -485,7 +486,7 @@ def main():
             scope_name="seq2seq", name="seq2seq",
             field_concat=FLAGS.field, position_concat=FLAGS.position,
             fgate_enc=FLAGS.fgate_encoder, dual_att=FLAGS.dual_attention,
-            decoder_add_pos=FLAGS.decoder_pos, encoder_add_pos=FLAGS.encoder_pos,
+            dual_att_add_pos=FLAGS.dual_att_pos, encoder_add_pos=FLAGS.encoder_pos,
             learning_rate=FLAGS.learning_rate, max_length=FLAGS.max_length,
             rl=FLAGS.rl, loss_alpha=FLAGS.alpha,
             beam_size=FLAGS.beam, scaled_coverage_rw=FLAGS.scaled_coverage_rw)

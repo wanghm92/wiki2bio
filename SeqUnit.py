@@ -20,7 +20,7 @@ import numpy as np
 
 class SeqUnit(object):
   def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab,field_vocab, position_vocab,
-               target_vocab, field_concat, position_concat, fgate_enc, dual_att, encoder_add_pos, decoder_add_pos,
+               target_vocab, field_concat, position_concat, fgate_enc, dual_att, encoder_add_pos, dual_att_add_pos,
                learning_rate, scope_name, name, start_token=2, stop_token=2, max_length=150,
                rl=False, loss_alpha=1, beam_size=1, lp_alpha=0.9, scaled_coverage_rw=False):
     '''
@@ -34,7 +34,7 @@ class SeqUnit(object):
       bool values, whether concat position embedding to word embedding and field embedding for encoder inputs
     fgate_enc, dual_att:
       bool values, whether use field-gating / dual attention or not
-    encoder_add_pos, decoder_add_pos:
+    encoder_add_pos, dual_att_add_pos:
       bool values, whether add position embedding to field-gating encoder / decoder with dual attention or not
     '''
     self.batch_size 		  = batch_size
@@ -45,7 +45,7 @@ class SeqUnit(object):
     self.uni_size 			  = emb_size if not field_concat else emb_size+field_size
     self.uni_size 			  = self.uni_size if not position_concat else self.uni_size+2*pos_size
     self.field_encoder_size   = field_size if not encoder_add_pos else field_size+2*pos_size
-    self.field_att_size 	    = field_size if not decoder_add_pos  else field_size+2*pos_size
+    self.field_att_size 	    = field_size if not dual_att_add_pos  else field_size+2*pos_size
     self.source_vocab 	 = source_vocab
     self.target_vocab 	 = target_vocab
     self.field_vocab 	   = field_vocab
@@ -61,7 +61,7 @@ class SeqUnit(object):
     self.fgate_enc 		   = fgate_enc
     self.dual_att 		   = dual_att
     self.encoder_add_pos = encoder_add_pos
-    self.decoder_add_pos = decoder_add_pos
+    self.dual_att_add_pos = dual_att_add_pos
     self.loss_alpha_value = loss_alpha
     self.units  = {}
     self.params = {}
@@ -108,7 +108,7 @@ class SeqUnit(object):
         if rl:
           self.decoder_embed_sampled = tf.nn.embedding_lookup(self.embedding, self.decoder_input_sampled)
 
-        if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos:
+        if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.dual_att_add_pos:
           self.fembedding  = tf.get_variable('fembedding', [self.field_vocab, self.field_size])
           self.field_embed = tf.nn.embedding_lookup(self.fembedding, self.encoder_field)
           self.field_pos_embed = self.field_embed
@@ -116,21 +116,21 @@ class SeqUnit(object):
           if self.field_concat:
             self.encoder_embed = tf.concat([self.encoder_embed, self.field_embed], 2)
 
-        if self.position_concat or self.encoder_add_pos or self.decoder_add_pos:
+        if self.position_concat or self.encoder_add_pos or self.dual_att_add_pos:
           self.pembedding = tf.get_variable('pembedding', [self.position_vocab, self.pos_size])
           self.rembedding = tf.get_variable('rembedding', [self.position_vocab, self.pos_size])
           self.pos_embed  = tf.nn.embedding_lookup(self.pembedding, self.encoder_pos)
           self.rpos_embed = tf.nn.embedding_lookup(self.rembedding, self.encoder_rpos)
 
-          if position_concat:
+          if self.position_concat:
             self.encoder_embed   = tf.concat([self.encoder_embed, self.pos_embed, self.rpos_embed], 2)
             self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
-          elif self.encoder_add_pos or self.decoder_add_pos:
+          elif self.encoder_add_pos or self.dual_att_add_pos:
             self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
 
     if self.field_concat or self.fgate_enc:
       self.params.update({'fembedding': self.fembedding})
-    if self.position_concat or self.encoder_add_pos or self.decoder_add_pos:
+    if self.position_concat or self.encoder_add_pos or self.dual_att_add_pos:
       self.params.update({'pembedding': self.pembedding})
       self.params.update({'rembedding': self.rembedding})
 

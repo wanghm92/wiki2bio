@@ -7,7 +7,7 @@ import tensorflow as tf
 import time
 import numpy as np
 MAX = 64
-MIN = 5
+MIN = 2
 
 class DataLoader(object):
   def __init__(self, data_dir, data_dir_ori, limits):
@@ -47,6 +47,7 @@ class DataLoader(object):
     print('Reading datasets consumes %.3f seconds' % (time.time() - start_time))
 
   def load_data(self, path, filter=False):
+    print(path)
     summary_id_path, text_path, field_path, pos_path, rpos_path, coverage_path, summary_tk_path = path
 
     summary_ids = open(summary_id_path, 'r').read().strip().split('\n')
@@ -102,6 +103,7 @@ class DataLoader(object):
     summary_ids, texts, fields, poses, rposes, summary_tks, coverage_lbs, _ = data
 
     data_size 	= len(summary_ids)
+    print('data_size = %d'%data_size)
     num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
                           else int(data_size / batch_size) + 1
 
