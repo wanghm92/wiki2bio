@@ -26,7 +26,7 @@ bc = None
 last_best = 0.0
 file_paths = {}
 
-suffix='small'
+suffix='data'
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
 
@@ -107,7 +107,7 @@ flag_file  = save_dir + 'flags'
 rank_file  = save_dir + 'ranking'
 valid_path = "%s/valid/valid.box.val"%prepro_out
 test_path  = "%s/test/test.box.val"%prepro_out
-train_path  = "%s/train/train.box.val"%prepro_out
+# train_path  = "%s/train/train.box.val"%prepro_out
 tb_path	   = save_dir + 'event/'
 tfwriter = tf.summary.FileWriter(tb_path)
 
@@ -153,6 +153,7 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
   if rl:
     reserved_indices = trainset[-1]
     # print(reserved_indices)
+    train_path = dataloader.train_data_path[-1]
     train_box_val = open(train_path, 'r').read().strip().split('\n')
     train_box_val = [list(t.strip().split()) for t in train_box_val]
     train_box_val = np.array(train_box_val)[reserved_indices]
@@ -277,12 +278,12 @@ def test_metrics(*args):
 def test_bleu(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
   L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
   if mode == 'valid':
-    texts_path = valid_path
-    gold_path = dataloader.dev_data_path[-1]
+    texts_path = dataloader.dev_data_path[-1]
+    gold_path = dataloader.dev_data_path[-2]
     evalset = dataloader.dev_set
   else:
-    texts_path = test_path
-    gold_path = dataloader.test_data_path[-1]
+    texts_path = dataloader.test_data_path[-1]
+    gold_path = dataloader.test_data_path[-2]
     evalset = dataloader.test_set
 
   # for copy words from the infoboxes
@@ -343,12 +344,12 @@ def test_bleu(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
 def test_both(sess, dataloader, model, ksave_dir, mode='valid', vocab=None):
   L.info('Begin evaluating (ROUGE=%s) in %s mode ...'%(FLAGS.rouge, mode))
   if mode == 'valid':
-    texts_path = valid_path
-    gold_path = gold_path_valid
+    texts_path = dataloader.dev_data_path[-1]
+    gold_path = dataloader.dev_data_path[-2]
     evalset = dataloader.dev_set
   else:
-    texts_path = test_path
-    gold_path = gold_path_test
+    texts_path = dataloader.test_data_path[-1]
+    gold_path = dataloader.test_data_path[-2]
     evalset = dataloader.test_set
 
   # for copy words from the infoboxes

@@ -10,17 +10,20 @@ MIN = 2
 
 class DataLoader_s2t(object):
   def __init__(self, data_dir, data_dir_ori, limits):
-    self.train_data_path = [data_dir + '/train/train.summary.id',
+    self.train_data_path = [data_dir + '/train/skeleton/train.summary.id.filtered',
                             data_dir + '/train/skeleton/train.summary.id.skeleton',
-                            data_dir_ori + '/train.summary']
+                            data_dir + '/train/skeleton/train.summary.filtered',
+                            data_dir + '/train/skeleton/train.summary.skeleton']
 
-    self.test_data_path  = [data_dir + '/test/test.summary.id',
+    self.test_data_path  = [data_dir + '/test/skeleton/test.summary.id.filtered',
                             data_dir + '/test/skeleton/test.summary.id.skeleton',
-                            data_dir_ori + '/test.summary']
+                            data_dir + '/test/skeleton/test.summary.filtered',
+                            data_dir + '/test/skeleton/test.summary.skeleton']
 
-    self.dev_data_path   = [data_dir + '/valid/valid.summary.id',
+    self.dev_data_path   = [data_dir + '/valid/skeleton/valid.summary.id.filtered',
                             data_dir + '/valid/skeleton/valid.summary.id.skeleton',
-                            data_dir_ori + '/valid.summary']
+                            data_dir + '/valid/skeleton/valid.summary.filtered',
+                            data_dir + '/valid/skeleton/valid.summary.skeleton']
 
     self.limits 	  = limits
     self.man_text_len = 100
@@ -35,7 +38,7 @@ class DataLoader_s2t(object):
 
   def load_data(self, path, filter=True):
       print(path)
-      summary_id_path, text_path, summary_tk_path = path
+      summary_id_path, text_path, summary_tk_path, _ = path
 
       summary_ids = open(summary_id_path, 'r').read().strip().split('\n')
       summary_tks = open(summary_tk_path, 'r').read().strip().split('\n')
