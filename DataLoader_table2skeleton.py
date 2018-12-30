@@ -44,6 +44,6 @@ class DataLoader_t2s(DataLoader):
     self.dev_set   = self.load_data(self.dev_data_path)
     print('Reading datasets consumes %.3f seconds' % (time.time() - start_time))
 
-  def load_data(self, path, filter=False):
-      return super(DataLoader_t2s, self).load_data(path, filter=True)
+  # def load_data(self, path, filter=False):
+  #     return super(DataLoader_t2s, self).load_data(path, filter=True)
 

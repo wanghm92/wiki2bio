@@ -31,12 +31,12 @@ class DataLoader_s2t(object):
 
     print('Reading datasets from ...')
     print(data_dir)
-    self.train_set = self.load_data(self.train_data_path)
+    self.train_set = self.load_data(self.train_data_path, filter=True)
     self.test_set  = self.load_data(self.test_data_path)
     self.dev_set   = self.load_data(self.dev_data_path)
     print('Reading datasets consumes %.3f seconds' % (time.time() - start_time))
 
-  def load_data(self, path, filter=True):
+  def load_data(self, path, filter=False):
       print(path)
       summary_id_path, text_path, summary_tk_path, _ = path
 
@@ -55,7 +55,7 @@ class DataLoader_s2t(object):
 
           for idx, (summary_id, summary_tk, text) in enumerate(zip(summary_ids, summary_tks, texts)):
 
-              length = len(text.strip().split(' '))
+              length = len(summary_id.strip().split(' '))
 
               if (length > MAX or length < MIN):
                   continue

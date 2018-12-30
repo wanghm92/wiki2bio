@@ -7,7 +7,7 @@ import tensorflow as tf
 import time
 import numpy as np
 MAX = 64
-MIN = 2
+MIN = 5
 
 class DataLoader(object):
   def __init__(self, data_dir, data_dir_ori, limits):
@@ -53,13 +53,13 @@ class DataLoader(object):
     print(path)
     summary_id_path, text_path, field_path, pos_path, rpos_path, coverage_path, summary_tk_path, _ = path
 
-    summary_ids = open(summary_id_path, 'r').read().strip().split('\n')
-    summary_tks = open(summary_tk_path, 'r').read().strip().split('\n')
-    coverage_lbs = open(coverage_path, 'r').read().strip().split('\n')
-    texts 	  = open(text_path,    'r').read().strip().split('\n')
-    fields 	  = open(field_path,   'r').read().strip().split('\n')
-    poses 	  = open(pos_path,     'r').read().strip().split('\n')
-    rposes 	  = open(rpos_path,    'r').read().strip().split('\n')
+    summary_ids  = open(summary_id_path, 'r').read().strip().split('\n')
+    summary_tks  = open(summary_tk_path, 'r').read().strip().split('\n')
+    coverage_lbs = open(coverage_path,   'r').read().strip().split('\n')
+    texts 	     = open(text_path,       'r').read().strip().split('\n')
+    fields 	     = open(field_path,      'r').read().strip().split('\n')
+    poses 	     = open(pos_path,        'r').read().strip().split('\n')
+    rposes 	     = open(rpos_path,       'r').read().strip().split('\n')
 
     if self.limits > 0:
       summary_ids = summary_ids[:self.limits]
@@ -148,7 +148,14 @@ class DataLoader(object):
         text_len 	= len(text)
         pos_len 	= len(pos)
         rpos_len 	= len(rpos)
-        assert summary_len 	== len(summary_tk)
+        try:
+            assert summary_len 	== len(summary_tk)
+        except AssertionError:
+            print(summary_tk)
+            print(len(summary_tk))
+            print(summary_id)
+            print(summary_len)
+            continue
         assert text_len == len(field)
         assert pos_len 	== len(field)
         assert rpos_len == pos_len

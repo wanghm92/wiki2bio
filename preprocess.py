@@ -7,6 +7,8 @@ from os.path import expanduser
 HOME = expanduser("~")
 prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 
+# TODO: replace open() with io.open(encoding='utf-8'), non-breaking space exists
+
 def split_infobox():
   """
   extract box content, field type and position information from infoboxes from original_data
