@@ -87,11 +87,14 @@ def format_time(seconds):
     return f
 
 def copy_file(dst, src=os.getcwd()):
-    files = os.listdir(src)
-    for file in files:
-        file_ext = file.split('.')[-1]
-        if file_ext=='py':
-            shutil.copy(os.path.join(src,file), dst)
+    if not os.listdir(dst):
+        files = os.listdir(src)
+        for file in files:
+            file_ext = file.split('.')[-1]
+            if file_ext=='py':
+                shutil.copy(os.path.join(src,file), dst)
+    else:
+        print("Previously saved src files, not overwriting")
 
 def write_word(pred_list, save_dir, name):
     ss = open(save_dir + name, "w+")
