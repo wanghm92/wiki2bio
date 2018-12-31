@@ -21,7 +21,7 @@ import numpy as np
 class SeqUnit(object):
   def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab,field_vocab, position_vocab,
                target_vocab, field_concat, position_concat, fgate_enc, dual_att, encoder_add_pos, dual_att_add_pos,
-               learning_rate, scope_name, name, start_token=2, stop_token=2, max_length=150,
+               learning_rate, scope_name, name, start_token=2, stop_token=2, max_length=150, mode='train', dp=0.8,
                rl=False, loss_alpha=1, beam_size=1, lp_alpha=0.9, scaled_coverage_rw=False, out_vocab_mask=False):
     '''
     batch_size, hidden_size, emb_size, field_size, pos_size:
@@ -105,12 +105,20 @@ class SeqUnit(object):
         self.embedding = tf.get_variable('embedding', [self.source_vocab, self.emb_size])
         self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
         self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
+
+        # apply dropout on word embedding
+        self.encoder_embed = tf.layers.dropout(self.encoder_embed, rate=dp, training=(mode == 'train'))
+        self.decoder_embed = tf.layers.dropout(self.decoder_embed, rate=dp, training=(mode == 'train'))
+
         if rl:
           self.decoder_embed_sampled = tf.nn.embedding_lookup(self.embedding, self.decoder_input_sampled)
 
         if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.dual_att_add_pos:
           self.fembedding  = tf.get_variable('fembedding', [self.field_vocab, self.field_size])
           self.field_embed = tf.nn.embedding_lookup(self.fembedding, self.encoder_field)
+          # apply dropout on field embedding
+          self.field_embed = tf.layers.dropout(self.field_embed, rate=dp, training=(mode == 'train'))
+
           self.field_pos_embed = self.field_embed
 
           if self.field_concat:
@@ -135,6 +143,7 @@ class SeqUnit(object):
       self.params.update({'rembedding': self.rembedding})
 
     self.params.update({'embedding': self.embedding})
+
 
     # ====== encoder ====== #
     if self.fgate_enc:
@@ -179,7 +188,7 @@ class SeqUnit(object):
     losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=de_outputs, labels=self.decoder_output)
     mask = tf.sign(tf.to_float(self.decoder_output))
     losses = mask * losses
-    self.loss_mle = tf.reduce_mean(losses)
+    self.loss_mle = tf.reduce_mean(tf.reduce_sum(losses, axis=-1))
     self.mean_loss = self.loss_mle
 
     if rl:

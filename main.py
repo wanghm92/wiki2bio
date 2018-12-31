@@ -9,9 +9,9 @@ import tensorflow as tf
 import numpy as np
 from SeqUnit import *
 
-# from DataLoader import DataLoader
+from DataLoader import DataLoader
 # from DataLoader_table2skeleton import DataLoader_t2s as DataLoader
-from DataLoader_skeleton2texts import DataLoader_s2t as DataLoader
+# from DataLoader_skeleton2texts import DataLoader_s2t as DataLoader
 
 from PythonROUGE import PythonROUGE
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
@@ -44,6 +44,7 @@ tf.app.flags.DEFINE_integer("report", 500, 'report losses after some steps')
 tf.app.flags.DEFINE_integer("eval_multi", 5, 'report valid results after some steps')
 tf.app.flags.DEFINE_integer("max_to_keep", 5, 'maximum number of checkpoints to save')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003, 'learning rate')
+tf.app.flags.DEFINE_float("dp", 0.8, 'dropout rate')
 tf.app.flags.DEFINE_integer("max_length", 100, 'maximum decoding length')
 
 tf.app.flags.DEFINE_float("alpha", 0.9, 'percentage of MLE loss')
@@ -494,6 +495,7 @@ def main():
             fgate_enc=FLAGS.fgate_encoder, dual_att=FLAGS.dual_attention,
             dual_att_add_pos=FLAGS.dual_att_pos, encoder_add_pos=FLAGS.encoder_pos,
             learning_rate=FLAGS.learning_rate, max_length=FLAGS.max_length,
+            mode=FLAGS.mode, dp=FLAGS.dp,
             rl=FLAGS.rl, loss_alpha=FLAGS.alpha,
             beam_size=FLAGS.beam, scaled_coverage_rw=FLAGS.scaled_coverage_rw,
             out_vocab_mask=FLAGS.out_vocab_mask)
