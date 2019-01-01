@@ -44,7 +44,7 @@ tf.app.flags.DEFINE_integer("report", 500, 'report losses after some steps')
 tf.app.flags.DEFINE_integer("eval_multi", 5, 'report valid results after some steps')
 tf.app.flags.DEFINE_integer("max_to_keep", 5, 'maximum number of checkpoints to save')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003, 'learning rate')
-tf.app.flags.DEFINE_float("dp", 0.8, 'dropout rate')
+tf.app.flags.DEFINE_float("dp", 0, 'dropout rate')
 tf.app.flags.DEFINE_integer("max_length", 100, 'maximum decoding length')
 
 tf.app.flags.DEFINE_float("alpha", 0.9, 'percentage of MLE loss')
