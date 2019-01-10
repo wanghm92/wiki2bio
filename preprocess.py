@@ -5,7 +5,8 @@ import re, time, os, sys
 suffix='data'
 from os.path import expanduser
 HOME = expanduser("~")
-prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
+# prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
+prepro_in = '%s/table2text_nlg/data/dkb/wikibio_format'%HOME
 
 # TODO: replace open() with io.open(encoding='utf-8'), non-breaking space exists
 
@@ -36,7 +37,7 @@ def split_infobox():
 
     # each box
     for ib in box:
-      item = ib.split('\t')
+      item = ib.strip().split('\t')
       box_single_word, box_single_label, box_single_pos = [], [], []
 
       # within a box
@@ -301,7 +302,8 @@ def make_dirs():
       os.mkdir(d)
 
 if __name__ == '__main__':
-  prepro_out = 'processed_small'
+  # prepro_out = 'processed_small'
+  prepro_out = 'processed_dkb'
   make_dirs()
   preprocess()
   check_generated_box()

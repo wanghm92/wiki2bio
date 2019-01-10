@@ -9,7 +9,8 @@ import tensorflow as tf
 import numpy as np
 from SeqUnit import *
 
-from DataLoader import DataLoader
+# from DataLoader import DataLoader
+from DataLoader_dkb import DataLoader_dkb as DataLoader
 # from DataLoader_table2skeleton import DataLoader_t2s as DataLoader
 # from DataLoader_skeleton2texts import DataLoader_s2t as DataLoader
 
@@ -26,9 +27,19 @@ bc = None
 last_best = 0.0
 file_paths = {}
 
-suffix='data'
-prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
+# suffix='data'
+# prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
+# prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
+# position_vocab = 31
+
+suffix='dkb'
+prepro_in = '%s/table2text_nlg/data/dkb/wikibio_format'%HOME
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
+position_vocab = 25
+with open("{}/word_vocab.txt".format(prepro_in), 'r') as fin:
+  source_vocab_size = len(fin.readlines()) + 4
+with open("{}/field_vocab.txt".format(prepro_in), 'r') as fin:
+  field_vocab_size = len(fin.readlines()) + 4
 
 tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
 tf.app.flags.DEFINE_integer("emb_size", 400, "Size of embedding.")
@@ -36,10 +47,10 @@ tf.app.flags.DEFINE_integer("field_size", 50, "Size of embedding.")
 tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size of train set.")
 tf.app.flags.DEFINE_integer("epoch", 100, "Number of training epoch.")
-tf.app.flags.DEFINE_integer("source_vocab", 20003, 'vocabulary size')
-tf.app.flags.DEFINE_integer("field_vocab", 1480, 'vocabulary size')
-tf.app.flags.DEFINE_integer("position_vocab", 31, 'vocabulary size')
-tf.app.flags.DEFINE_integer("target_vocab", 20003, 'vocabulary size')
+tf.app.flags.DEFINE_integer("source_vocab", source_vocab_size, 'vocabulary size')
+tf.app.flags.DEFINE_integer("field_vocab", field_vocab_size, 'vocabulary size')
+tf.app.flags.DEFINE_integer("position_vocab", position_vocab, 'vocabulary size')
+tf.app.flags.DEFINE_integer("target_vocab", source_vocab_size, 'vocabulary size')
 tf.app.flags.DEFINE_integer("report", 500, 'report losses after some steps')
 tf.app.flags.DEFINE_integer("eval_multi", 5, 'report valid results after some steps')
 tf.app.flags.DEFINE_integer("max_to_keep", 5, 'maximum number of checkpoints to save')
