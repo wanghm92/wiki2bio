@@ -6,7 +6,7 @@ suffix='data'
 from os.path import expanduser
 HOME = expanduser("~")
 # prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
-prepro_in = '%s/table2text_nlg/data/dkb/wikibio_format'%HOME
+prepro_in = '%s/table2text_nlg/data/dkb/wikibio_format_tokenized'%HOME
 
 # TODO: replace open() with io.open(encoding='utf-8'), non-breaking space exists
 
@@ -180,7 +180,11 @@ class Vocab(object):
     cnt = 4
     with open("%s/word_vocab.txt"%prepro_in, "r") as v:
       for line in v:
-        word = line.strip().split()[0]
+        # remove '' from word list
+        try:
+          word = line.strip().split()[0]
+        except IndexError:
+          continue
         vocab[word] = cnt
         cnt += 1
     self._word2id = vocab
@@ -303,7 +307,7 @@ def make_dirs():
 
 if __name__ == '__main__':
   # prepro_out = 'processed_small'
-  prepro_out = 'processed_dkb'
+  prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_dkb_tk'%HOME
   make_dirs()
   preprocess()
   check_generated_box()

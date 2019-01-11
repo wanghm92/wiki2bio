@@ -69,35 +69,33 @@ class DataLoader(object):
       poses 	  = poses[:self.limits]
       rposes 	  = rposes[:self.limits]
 
-    reserved_indices = []
-    if filter:
-      summary_ids_out, texts_out, fields_out, poses_out, rposes_out, \
-      coverage_lbs_out, summary_tks_out = [], [], [], [], [], [], []
+    summary_ids_out, texts_out, fields_out, poses_out, rposes_out, coverage_lbs_out, summary_tks_out, reserved_indices \
+        = [], [], [], [], [], [], [], []
 
-      for idx, (summary_id, summary_tk, coverage_lb, text, field, pos, rpos) \
-              in enumerate(zip(summary_ids, summary_tks, coverage_lbs, texts, fields, poses, rposes)):
+    for idx, (summary_id, summary_tk, coverage_lb, text, field, pos, rpos) \
+          in enumerate(zip(summary_ids, summary_tks, coverage_lbs, texts, fields, poses, rposes)):
 
         length = len(summary_id.strip().split(' '))
 
-        if (length > MAX or length < MIN):
-          continue
+        if filter:
+          if (length > MAX or length < MIN):
+            continue
         else:
-          summary_ids_out.append(list(map(int, summary_id.strip().split(' '))))
-          summary_tks_out.append(summary_tk.strip().split(' '))
+          summary_id_int_list = list(map(int, summary_id.strip().split(' ')))
+          summary_id_tk_list = [x for x in summary_tk.strip().split(' ') if len(x) > 0]
+          if len(summary_id_tk_list) != len(summary_id_int_list):
+              print(" >>> Length mismatch, discarded:")
+              print("--- Summary tks [{}] --- \n{}\n".format(len(summary_id_tk_list), summary_id_tk_list))
+              print("--- Summary ids [{}] --- \n{}\n".format(len(summary_id_int_list), summary_id_int_list))
+              continue
+          summary_ids_out.append(summary_id_int_list)
+          summary_tks_out.append(summary_id_tk_list)
           coverage_lbs_out.append(list(map(int, coverage_lb.strip().split(' '))))
           texts_out.append(list(map(int, text.strip().split(' '))))
           fields_out.append(list(map(int, field.strip().split(' '))))
           poses_out.append(list(map(int, pos.strip().split(' '))))
           rposes_out.append(list(map(int, rpos.strip().split(' '))))
           reserved_indices.append(idx)
-    else:
-      summary_ids_out = [list(map(int, summary.strip().split(' '))) for summary in summary_ids]
-      summary_tks_out = [summary.strip().split(' ') for summary in summary_tks]
-      coverage_lbs_out = [list(map(int, coverage_lb.strip().split(' '))) for coverage_lb in coverage_lbs]
-      texts_out 	  = [list(map(int, text.strip().split(' ')))    for text in texts]
-      fields_out	  = [list(map(int, field.strip().split(' ')))   for field in fields]
-      poses_out 	  = [list(map(int, pos.strip().split(' ')))     for pos in poses]
-      rposes_out 	  = [list(map(int, rpos.strip().split(' ')))    for rpos in rposes]
 
     return summary_ids_out, texts_out, fields_out, poses_out, rposes_out, \
            summary_tks_out, coverage_lbs_out, reserved_indices
@@ -148,14 +146,7 @@ class DataLoader(object):
         text_len 	= len(text)
         pos_len 	= len(pos)
         rpos_len 	= len(rpos)
-        try:
-            assert summary_len 	== len(summary_tk)
-        except AssertionError:
-            print(summary_tk)
-            print(len(summary_tk))
-            print(summary_id)
-            print(summary_len)
-            continue
+        assert summary_len == len(summary_tk)
         assert text_len == len(field)
         assert pos_len 	== len(field)
         assert rpos_len == pos_len

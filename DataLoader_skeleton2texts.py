@@ -59,25 +59,27 @@ class DataLoader_s2t(object):
           summary_tks = summary_tks[:self.limits]
           texts = texts[:self.limits]
 
-      reserved_indices = []
-      if filter:
-          summary_ids_out, texts_out, summary_tks_out = [], [], []
+      summary_ids_out, texts_out, summary_tks_out, reserved_indices = [], [], [], []
 
-          for idx, (summary_id, summary_tk, text) in enumerate(zip(summary_ids, summary_tks, texts)):
+      for idx, (summary_id, summary_tk, text) in enumerate(zip(summary_ids, summary_tks, texts)):
 
-              length = len(summary_id.strip().split(' '))
+          length = len(summary_id.strip().split(' '))
 
-              if (length > MAX or length < MIN):
+          if filter:
+            if (length > MAX or length < MIN):
+              continue
+          else:
+              summary_id_int_list = list(map(int, summary_id.strip().split(' ')))
+              summary_id_tk_list = [x for x in summary_tk.strip().split(' ') if len(x) > 0]
+              if len(summary_id_tk_list) != len(summary_id_int_list):
+                  print(" >>> Length mismatch, discarded:")
+                  print("--- Summary tks [{}] --- \n{}\n".format(len(summary_id_tk_list), summary_id_tk_list))
+                  print("--- Summary ids [{}] --- \n{}\n".format(len(summary_id_int_list), summary_id_int_list))
                   continue
-              else:
-                  summary_ids_out.append(list(map(int, summary_id.strip().split(' '))))
-                  summary_tks_out.append(summary_tk.strip().split(' '))
-                  texts_out.append(list(map(int, text.strip().split(' '))))
-                  reserved_indices.append(idx)
-      else:
-          summary_ids_out = [list(map(int, summary.strip().split(' '))) for summary in summary_ids]
-          summary_tks_out = [summary.strip().split(' ') for summary in summary_tks]
-          texts_out = [list(map(int, text.strip().split(' '))) for text in texts]
+              summary_ids_out.append(summary_id_int_list)
+              summary_tks_out.append(summary_id_tk_list)
+              texts_out.append(list(map(int, text.strip().split(' '))))
+              reserved_indices.append(idx)
 
       return summary_ids_out, texts_out, summary_tks_out, reserved_indices
 

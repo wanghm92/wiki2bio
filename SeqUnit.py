@@ -293,7 +293,6 @@ class SeqUnit(object):
     batch_size = tf.shape(self.decoder_input)[0]
     # max_time = tf.shape(self.decoder_input)[1]
     max_time = tf.shape(inputs)[1]
-    encoder_len = tf.shape(self.encoder_input)[1]
 
     time = tf.constant(0, dtype=tf.int32)
     h0 = initial_state
@@ -324,7 +323,6 @@ class SeqUnit(object):
 
   def decoder_g(self, initial_state):
     batch_size  = tf.shape(self.encoder_input)[0]
-    encoder_len = tf.shape(self.encoder_input)[1]
 
     time 	= tf.constant(0, dtype=tf.int32)
     h0 		= initial_state
@@ -358,7 +356,6 @@ class SeqUnit(object):
   def decoder_s(self, initial_state):
     """categorical sampling decoder"""
     batch_size  = tf.shape(self.encoder_input)[0]
-    encoder_len = tf.shape(self.encoder_input)[1]
 
     sample_shape = tf.constant(1, dtype=tf.int32)
     time 	= tf.constant(0, dtype=tf.int32)
