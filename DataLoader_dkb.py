@@ -71,9 +71,8 @@ class DataLoader_dkb(object):
 
         length = len(summary_id.strip().split(' '))
 
-        if filter:
-          if (length > MAX or length < MIN):
-            continue
+        if filter and (length > MAX or length < MIN):
+          continue
         else:
           summary_id_int_list = list(map(int, summary_id.strip().split(' ')))
           summary_id_tk_list = [x for x in summary_tk.strip().split(' ') if len(x) > 0]

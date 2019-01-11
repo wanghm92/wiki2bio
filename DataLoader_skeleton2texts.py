@@ -65,8 +65,7 @@ class DataLoader_s2t(object):
 
           length = len(summary_id.strip().split(' '))
 
-          if filter:
-            if (length > MAX or length < MIN):
+          if filter and (length > MAX or length < MIN):
               continue
           else:
               summary_id_int_list = list(map(int, summary_id.strip().split(' ')))
