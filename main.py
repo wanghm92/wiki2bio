@@ -9,8 +9,8 @@ import tensorflow as tf
 import numpy as np
 from SeqUnit import *
 
-# from DataLoader import DataLoader
-from DataLoader_dkb import DataLoader_dkb as DataLoader
+from DataLoader import DataLoader
+# from DataLoader_dkb import DataLoader_dkb as DataLoader
 # from DataLoader_table2skeleton import DataLoader_t2s as DataLoader
 # from DataLoader_skeleton2texts import DataLoader_s2t as DataLoader
 
@@ -27,15 +27,15 @@ bc = None
 last_best = 0.0
 file_paths = {}
 
-# suffix='data'
-# prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
-# prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
-# position_vocab = 31
-
-suffix='dkb_tk'
-prepro_in = '%s/table2text_nlg/data/dkb/wikibio_format_tokenized'%HOME
+suffix='data'
+prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
 prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
-position_vocab = 25
+position_vocab = 31
+
+# suffix='dkb_tk'
+# prepro_in = '%s/table2text_nlg/data/dkb/wikibio_format_tokenized'%HOME
+# prepro_out = '%s/table2text_nlg/data/fieldgate_data/processed_%s'%(HOME, suffix)
+# position_vocab = 25
 with open("{}/word_vocab.txt".format(prepro_in), 'r') as fin:
   source_vocab_size = len(fin.readlines()) + 4
 with open("{}/field_vocab.txt".format(prepro_in), 'r') as fin:

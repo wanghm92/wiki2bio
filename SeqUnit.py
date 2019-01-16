@@ -9,7 +9,7 @@ import tensorflow as tf
 import pickle, sys, time
 from AttentionUnit import AttentionWrapper
 from dualAttentionUnit import dualAttentionWrapper
-from tripleAttentionUnit import tripleAttentionUnit
+from tripleAttentionUnit import tripleAttentionWrapper
 from LstmUnit import LstmUnit
 from fgateLstmUnit import fgateLstmUnit
 from OutputUnit import OutputUnit
@@ -161,13 +161,14 @@ class SeqUnit(object):
     if self.multi_att == 3:
       print('triple attention mechanism used')
       with tf.variable_scope(scope_name):
-        self.att_layer = tripleAttentionUnit(self.hidden_size,
-                                             self.hidden_size,
-                                             self.field_att_size,
-                                             en_outputs,
-                                             encoder_embed,
-                                             self.field_pos_embed,
-                                             "attention")
+        self.att_layer = tripleAttentionWrapper(self.hidden_size,
+                                                self.hidden_size,
+                                                self.field_att_size,
+                                                self.emb_size,
+                                                en_outputs,
+                                                encoder_embed,
+                                                self.field_pos_embed,
+                                                "attention")
         self.units.update({'attention': self.att_layer})
     elif self.multi_att == 2:
       print('dual attention mechanism used')
