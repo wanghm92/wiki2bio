@@ -40,17 +40,20 @@ class dualAttentionWrapper(object):
         phi_fds2d = tf.tanh(tf.nn.xw_plus_b(fds2d, self.Wf, self.bf))
         self.phi_fds = tf.reshape(phi_fds2d, tf.shape(self.hs))
 
-    def __call__(self, x, coverage = None, finished = None):
-        gamma_h = tf.tanh(tf.nn.xw_plus_b(x, self.Ws, self.bs))  # batch * hidden_size
+    def __call__(self, x, coverage=None, finished=None):
+        # field (+pos/rpos) embedding attentions
         alpha_h = tf.tanh(tf.nn.xw_plus_b(x, self.Wr, self.br))
         fd_weights = tf.reduce_sum(self.phi_fds * alpha_h, axis=2, keepdims=True)
         fd_weights = tf.exp(fd_weights - tf.reduce_max(fd_weights, axis=0, keepdims=True))
         fd_weights = tf.divide(fd_weights, (1e-6 + tf.reduce_sum(fd_weights, axis=0, keepdims=True)))
-        
-        
-        weights = tf.reduce_sum(self.phi_hs * gamma_h, axis=2, keepdims=True)  # input_len * batch
+
+        # hidden-state attentions
+        gamma_h = tf.tanh(tf.nn.xw_plus_b(x, self.Ws, self.bs))  # batch * hidden_size
+        weights = tf.reduce_sum(self.phi_hs*gamma_h, axis=2, keepdims=True)  # input_len * batch
         weights = tf.exp(weights - tf.reduce_max(weights, axis=0, keepdims=True))
         weights = tf.divide(weights, (1e-6 + tf.reduce_sum(weights, axis=0, keepdims=True)))
+
+        # Aggregation
         weights = tf.divide(weights * fd_weights, (1e-6 + tf.reduce_sum(weights * fd_weights, axis=0, keepdims=True)))
         
         context = tf.reduce_sum(self.hs * weights, axis=0)  # batch * input_size
