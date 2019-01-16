@@ -81,13 +81,13 @@ tf.app.flags.DEFINE_string("prefix", 'temp', 'name your model')
 tf.app.flags.DEFINE_string("dir", prepro_out, 'data set directory')
 tf.app.flags.DEFINE_string("dir_ori", prepro_in, 'data set directory')
 
-tf.app.flags.DEFINE_boolean("dual_attention",True,'dual attention layer or normal attention')
+tf.app.flags.DEFINE_integer("multi_attention", 2, 'multi attention layer or normal attention')
 tf.app.flags.DEFINE_boolean("fgate_encoder", False,'add field gate in encoder lstm')
 
 tf.app.flags.DEFINE_boolean("field", True,'concat field information to word embedding')
 tf.app.flags.DEFINE_boolean("position",True,'concat position information to word embedding')
 tf.app.flags.DEFINE_boolean("encoder_pos",False,'position info in field-gated encoder')
-tf.app.flags.DEFINE_boolean("dual_att_pos",True,'position info in dual attention decoder')
+tf.app.flags.DEFINE_boolean("multi_att_pos",True,'position info in dual attention decoder')
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -497,19 +497,19 @@ def main():
     copy_file(save_file_dir)
     dataloader = DataLoader(FLAGS.dir, FLAGS.dir_ori, FLAGS.limits)
     model = SeqUnit(batch_size=FLAGS.batch_size, hidden_size=FLAGS.hidden_size,
-            emb_size=FLAGS.emb_size, field_size=FLAGS.field_size,
-            pos_size=FLAGS.pos_size, field_vocab=FLAGS.field_vocab,
-            source_vocab=FLAGS.source_vocab, position_vocab=FLAGS.position_vocab,
-            target_vocab=FLAGS.target_vocab,
-            scope_name="seq2seq", name="seq2seq",
-            field_concat=FLAGS.field, position_concat=FLAGS.position,
-            fgate_enc=FLAGS.fgate_encoder, dual_att=FLAGS.dual_attention,
-            dual_att_add_pos=FLAGS.dual_att_pos, encoder_add_pos=FLAGS.encoder_pos,
-            learning_rate=FLAGS.learning_rate, max_length=FLAGS.max_length,
-            mode=FLAGS.mode, dp=FLAGS.dp,
-            rl=FLAGS.rl, loss_alpha=FLAGS.alpha,
-            beam_size=FLAGS.beam, scaled_coverage_rw=FLAGS.scaled_coverage_rw,
-            out_vocab_mask=FLAGS.out_vocab_mask)
+                    emb_size=FLAGS.emb_size, field_size=FLAGS.field_size,
+                    pos_size=FLAGS.pos_size, field_vocab=FLAGS.field_vocab,
+                    source_vocab=FLAGS.source_vocab, position_vocab=FLAGS.position_vocab,
+                    target_vocab=FLAGS.target_vocab,
+                    scope_name="seq2seq", name="seq2seq",
+                    field_concat=FLAGS.field, position_concat=FLAGS.position,
+                    fgate_enc=FLAGS.fgate_encoder, multi_att=FLAGS.multi_attention,
+                    multi_att_add_pos=FLAGS.multi_att_pos, encoder_add_pos=FLAGS.encoder_pos,
+                    learning_rate=FLAGS.learning_rate, max_length=FLAGS.max_length,
+                    mode=FLAGS.mode, dp=FLAGS.dp,
+                    rl=FLAGS.rl, loss_alpha=FLAGS.alpha,
+                    beam_size=FLAGS.beam, scaled_coverage_rw=FLAGS.scaled_coverage_rw,
+                    out_vocab_mask=FLAGS.out_vocab_mask)
 
     sess.run(tf.global_variables_initializer())
     saver = tf.train.Saver(max_to_keep=1000)
