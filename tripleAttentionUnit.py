@@ -40,7 +40,7 @@ class tripleAttentionWrapper(object):
             self.bw = tf.get_variable('bw', [hidden_size])
 
             # project output vector
-            self.Wo = tf.get_variable('Wo', [2*input_size+emb_size, hidden_size])
+            self.Wo = tf.get_variable('Wo', [2*input_size, hidden_size])
             self.bo = tf.get_variable('bo', [hidden_size])
 
         self.params.update({'Wh': self.Wh, 'Ws': self.Ws, 'Wo': self.Wo,
@@ -81,12 +81,12 @@ class tripleAttentionWrapper(object):
         wd_weights = tf.divide(wd_weights, (1e-6 + tf.reduce_sum(wd_weights, axis=0, keepdims=True)))
 
         # Aggregation
-        weights_h = tf.divide(weights * fd_weights, (1e-6 + tf.reduce_sum(weights * fd_weights, axis=0, keepdims=True)))
         weights_w = tf.divide(wd_weights * fd_weights, (1e-6 + tf.reduce_sum(wd_weights * fd_weights, axis=0, keepdims=True)))
+        weights_h = tf.divide(weights * weights_w, (1e-6 + tf.reduce_sum(weights * weights_w, axis=0, keepdims=True)))
 
         context_h = tf.reduce_sum(self.hs * weights_h, axis=0)  # batch * input_size
-        context_w = tf.reduce_sum(self.wds * weights_w, axis=0)  # batch * input_size
-        out = tf.tanh(tf.nn.xw_plus_b(tf.concat([x, context_h, context_w], -1), self.Wo, self.bo))
+        # context_w = tf.reduce_sum(self.wds * weights_w, axis=0)  # batch * input_size
+        out = tf.tanh(tf.nn.xw_plus_b(tf.concat([x, context_h], -1), self.Wo, self.bo))
 
         if finished is not None:
             out = tf.where(finished, tf.zeros_like(out), out)

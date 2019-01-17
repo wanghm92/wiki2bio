@@ -5,8 +5,8 @@ import re, time, os, sys
 suffix='data'
 from os.path import expanduser
 HOME = expanduser("~")
-# prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
-prepro_in = '%s/table2text_nlg/data/dkb/wikibio_format_tokenized'%HOME
+prepro_in = '%s/table2text_nlg/data/fieldgate_data/original_%s'%(HOME, suffix)
+# prepro_in = '%s/table2text_nlg/data/dkb/wikibio_format_tokenized'%HOME
 
 # TODO: replace open() with io.open(encoding='utf-8'), non-breaking space exists
 
