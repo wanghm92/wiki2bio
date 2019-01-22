@@ -59,7 +59,7 @@ tf.app.flags.DEFINE_float("dp", 0, 'dropout rate')
 tf.app.flags.DEFINE_integer("max_length", 100, 'maximum decoding length')
 
 tf.app.flags.DEFINE_float("alpha", 0.9, 'percentage of MLE loss')
-tf.app.flags.DEFINE_float("discount", 0.0, 'discount factor for cummulative rewards, default: not use')
+tf.app.flags.DEFINE_float("discount", 0.0, 'discount factor for cumulative rewards, default: not use')
 tf.app.flags.DEFINE_integer("beam", 1, "width of beam search")
 tf.app.flags.DEFINE_boolean("rl", False, 'whether to add policy gradient')
 tf.app.flags.DEFINE_boolean("neg", False, 'whether to use negative rewards')

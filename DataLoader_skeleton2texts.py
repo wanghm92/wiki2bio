@@ -25,16 +25,6 @@ class DataLoader_s2t(object):
                             data_dir + '/valid/skeleton/valid.summary.filtered',
                             data_dir + '/valid/skeleton/valid.summary.skeleton']
 
-    # self.test_data_path  = [data_dir + '/test/temp/test.summary.id.filtered',
-    #                         data_dir + '/test/temp/test.summary.id.skeleton',
-    #                         data_dir + '/test/temp/test.summary.filtered',
-    #                         data_dir + '/test/temp/test.summary.skeleton']
-    #
-    # self.dev_data_path   = [data_dir + '/valid/temp/valid.summary.id.filtered',
-    #                         data_dir + '/valid/temp/valid.summary.id.skeleton',
-    #                         data_dir + '/valid/temp/valid.summary.filtered',
-    #                         data_dir + '/valid/temp/valid.summary.skeleton']
-
     self.limits 	  = limits
     self.man_text_len = 100
     start_time 		  = time.time()
@@ -87,8 +77,7 @@ class DataLoader_s2t(object):
 
     data_size 	= len(summary_ids)
     print('data_size = %d'%data_size)
-    num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
-                          else int(data_size / batch_size) + 1
+    num_batches = int(data_size / batch_size) if data_size % batch_size == 0 else int(data_size / batch_size) + 1
 
     print('num_batches = %d'%num_batches)
     indices = np.arange(data_size)
