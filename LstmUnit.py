@@ -29,6 +29,7 @@ class LstmUnit(object):
         # Final Memory cell
         # add forget_bias (default: 1) the forget gate in order to reduce the scale of forgetting in the beginning of the training.
         c = tf.sigmoid(f+1.0) * c_prev + tf.sigmoid(i) * tf.tanh(j)
+        # c = tf.sigmoid(f) * c_prev + tf.sigmoid(i) * tf.tanh(j)
         h = tf.sigmoid(o) * tf.tanh(c)
 
         out, state = h, (h, c)

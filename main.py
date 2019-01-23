@@ -247,26 +247,6 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
 
           start_time = time.time()
 
-
-def bleu_score(labels_file, predictions_path):
-    bleu_script = '%s/onmt-tf-whm/third_party/multi-bleu.perl'%HOME
-    try:
-      with io.open(predictions_path, encoding="utf-8", mode="r") as predictions_file:
-        bleu_out = subprocess.check_output(
-            [bleu_script, labels_file],
-            stdin=predictions_file,
-            stderr=subprocess.STDOUT)
-        bleu_out = bleu_out.decode("utf-8")
-        bleu_score = re.search(r"BLEU = (.+?),", bleu_out).group(1)
-        return float(bleu_score)
-
-    except subprocess.CalledProcessError as error:
-      if error.output is not None:
-        msg = error.output.strip()
-        tf.logging.warning(
-            "{} script returned non-zero exit code: {}".format(bleu_script, msg))
-      return None
-
 def evaluate(sess, dataloader, model):
   L.info('Begin calculating evalutation loss (mle) ...')
   evalset = dataloader.dev_set
