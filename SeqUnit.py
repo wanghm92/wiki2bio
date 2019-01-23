@@ -69,6 +69,7 @@ class SeqUnit(object):
     self.units  = {}
     self.params = {}
 
+    # ====== input indices ====== #
     self.encoder_input 	= tf.placeholder(tf.int32, [None, None])
     self.encoder_field 	= tf.placeholder(tf.int32, [None, None])
     self.encoder_pos 	  = tf.placeholder(tf.int32, [None, None])
@@ -88,6 +89,7 @@ class SeqUnit(object):
         self.rewards = tf.placeholder(tf.float32, [None])
       self.loss_alpha = tf.constant(self.loss_alpha_value, dtype=tf.float32)
 
+    # ====== network modules ====== #
     with tf.variable_scope(scope_name):
       if self.fgate_enc:
         print('field-gated encoder LSTM')
@@ -99,8 +101,7 @@ class SeqUnit(object):
       self.dec_lstm = LstmUnit(self.hidden_size, self.emb_size, 'decoder_lstm')
       self.dec_out  = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output', out_vocab_mask=out_vocab_mask)
 
-    self.units.update({'encoder_lstm': self.enc_lstm,'decoder_lstm': self.dec_lstm,
-               'decoder_output': self.dec_out})
+    self.units.update({'encoder_lstm': self.enc_lstm, 'decoder_lstm': self.dec_lstm, 'decoder_output': self.dec_out})
 
     # ====== embeddings ====== #
     with tf.device('/cpu:0'):
@@ -227,14 +228,14 @@ class SeqUnit(object):
     hidden_size = self.hidden_size
 
     time = tf.constant(0, dtype=tf.int32)
-    h0 = (tf.zeros([batch_size, hidden_size], dtype=tf.float32),
-        tf.zeros([batch_size, hidden_size], dtype=tf.float32))
+    # NOTE: zero initial state
+    h0 = (tf.zeros([batch_size, hidden_size], dtype=tf.float32), tf.zeros([batch_size, hidden_size], dtype=tf.float32))
     f0 = tf.zeros([batch_size], dtype=tf.bool)
     inputs_ta = tf.TensorArray(dtype=tf.float32, size=max_time)
 
     # inputs: embeddings [batch_size, max_time, embedding_size]
     # inputs_ta: [max_time, batch_size, embedding_size]
-    inputs_ta = inputs_ta.unstack(tf.transpose(inputs, [1,0,2]))
+    inputs_ta = inputs_ta.unstack(tf.transpose(inputs, [1, 0, 2]))
     emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
 
     '''
@@ -257,8 +258,8 @@ class SeqUnit(object):
         tf.greater_equal: (x >= y) element-wise
       '''
       x_nt = tf.cond(tf.reduce_all(finished),
-               lambda: tf.zeros([batch_size, self.uni_size], dtype=tf.float32),
-               lambda: inputs_ta.read(t+1))
+                     lambda: tf.zeros([batch_size, self.uni_size], dtype=tf.float32),
+                     lambda: inputs_ta.read(t+1))
       return t+1, x_nt, s_nt, emit_ta, finished
 
     _, _, state, emit_ta, _ = tf.while_loop(
@@ -266,7 +267,7 @@ class SeqUnit(object):
       body=loop_fn,
       loop_vars=(time, inputs_ta.read(0), h0, emit_ta, f0))
 
-    outputs = tf.transpose(emit_ta.stack(), [1,0,2])
+    outputs = tf.transpose(emit_ta.stack(), [1, 0, 2])
     return outputs, state
 
   def fgate_encoder(self, inputs, fields, inputs_len):
@@ -311,11 +312,11 @@ class SeqUnit(object):
     max_time = tf.shape(inputs)[1]
 
     time = tf.constant(0, dtype=tf.int32)
-    h0 = initial_state
+    h0 = initial_state  # NOTE: encoder state
     f0 = tf.zeros([batch_size], dtype=tf.bool)
     x0 = tf.nn.embedding_lookup(self.embedding, tf.fill([batch_size], self.start_token))
     inputs_ta = tf.TensorArray(dtype=tf.float32, size=max_time)
-    inputs_ta = inputs_ta.unstack(tf.transpose(inputs, [1,0,2]))
+    inputs_ta = inputs_ta.unstack(tf.transpose(inputs, [1, 0, 2]))
     emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
 
     def loop_fn(t, x_t, s_t, emit_ta, finished):
@@ -334,14 +335,14 @@ class SeqUnit(object):
       body=loop_fn,
       loop_vars=(time, x0, h0, emit_ta, f0))
 
-    outputs = tf.transpose(emit_ta.stack(), [1,0,2])
+    outputs = tf.transpose(emit_ta.stack(), [1, 0, 2])
     return outputs, state
 
   def decoder_g(self, initial_state):
-    batch_size  = tf.shape(self.encoder_input)[0]
+    batch_size = tf.shape(self.encoder_input)[0]
 
     time 	= tf.constant(0, dtype=tf.int32)
-    h0 		= initial_state
+    h0 		= initial_state  # NOTE: encoder state
     f0 		= tf.zeros([batch_size], dtype=tf.bool)
     x0 		= tf.nn.embedding_lookup(self.embedding, tf.fill([batch_size], self.start_token))
     emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
@@ -360,7 +361,7 @@ class SeqUnit(object):
       return t+1, x_nt, s_nt, emit_ta, att_ta, finished
 
     _, _, state, emit_ta, att_ta, _ = tf.while_loop(
-      cond=lambda _1, _2, _3, _4, _5, finished:tf.logical_not(tf.reduce_all(finished)),
+      cond=lambda _1, _2, _3, _4, _5, finished: tf.logical_not(tf.reduce_all(finished)),
       body=loop_fn,
       loop_vars=(time, x0, h0, emit_ta, att_ta, f0))
 
@@ -371,7 +372,7 @@ class SeqUnit(object):
 
   def decoder_s(self, initial_state):
     """categorical sampling decoder"""
-    batch_size  = tf.shape(self.encoder_input)[0]
+    batch_size = tf.shape(self.encoder_input)[0]
 
     sample_shape = tf.constant(1, dtype=tf.int32)
     time 	= tf.constant(0, dtype=tf.int32)
@@ -397,11 +398,11 @@ class SeqUnit(object):
       return t+1, x_nt, s_nt, pred_ta, att_ta, finished, next_token
 
     _, _, state, pred_ta, att_ta, _, next_token = tf.while_loop(
-      cond=lambda _1, _2, _3, _4, _5, finished, _6:tf.logical_not(tf.reduce_all(finished)),
+      cond=lambda _1, _2, _3, _4, _5, finished, _6: tf.logical_not(tf.reduce_all(finished)),
       body=loop_fn,
       loop_vars=(time, x0, h0, pred_ta, att_ta, f0, t0))
 
-    pred_tokens = tf.transpose(pred_ta.stack(), [1,0])
+    pred_tokens = tf.transpose(pred_ta.stack(), [1, 0])
     atts = att_ta.stack()
     return pred_tokens, atts
 
@@ -568,11 +569,11 @@ class SeqUnit(object):
             bleu_rw=False, coverage_rw=False, positive_reward_only=False, scaled_coverage_rw=False):
     if rl:
       return self.train_rl(x, sess, train_box_val, bc,
-                         vocab=vocab, neg=neg, discount=discount,
-                         sampling=sampling, self_critic=self_critic,
-                         accumulator=accumulator, accumulator_sampled=accumulator_sampled, counter=counter,
-                         bleu_rw=bleu_rw, coverage_rw=coverage_rw,
-                         positive_reward_only=positive_reward_only, scaled_coverage_rw=scaled_coverage_rw)
+                           vocab=vocab, neg=neg, discount=discount,
+                           sampling=sampling, self_critic=self_critic,
+                           accumulator=accumulator, accumulator_sampled=accumulator_sampled, counter=counter,
+                           bleu_rw=bleu_rw, coverage_rw=coverage_rw,
+                           positive_reward_only=positive_reward_only, scaled_coverage_rw=scaled_coverage_rw)
     else:
       return True, self.train_mle(x, sess), 0, 0, None, None, 0
 

@@ -264,6 +264,15 @@ def evaluate(sess, dataloader, model):
 
   return loss / num_batches
 
+def test(sess, dataloader, model, beam_size=FLAGS.beam):
+  print("beam_size={}".format(beam_size))
+  vocab = Vocab()
+  if beam_size > 1:
+    result, _, _ = test_beam(sess, dataloader, model, save_dir, 'test', vocab=vocab, beam_size=beam_size)
+  else:
+    result, _, _ = test_metrics(sess, dataloader, model, save_dir, 'test', vocab)
+  print(result)
+
 def test_metrics(*args):
   return test_both(*args) if FLAGS.rouge else test_bleu(*args)
 
@@ -460,15 +469,6 @@ def test_beam(sess, dataloader, model, ksave_dir, mode='valid', vocab=None, beam
   nocopy_result = ''.join(nocopy_result)
   return nocopy_result, bleu_unk, 0.0
 
-
-def test(sess, dataloader, model, saver, beam_size=FLAGS.beam):
-  print("beam_size={}".format(beam_size))
-  vocab = Vocab()
-  if beam_size > 1:
-    result, _, _ = test_beam(sess, dataloader, model, save_dir, 'test', vocab=vocab, beam_size=beam_size)
-  else:
-    result, _, _ = test_metrics(sess, dataloader, model, save_dir, 'test', vocab)
-  print(result)
 
 def main():
   config = tf.ConfigProto(allow_soft_placement=True)

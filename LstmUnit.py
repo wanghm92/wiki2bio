@@ -16,20 +16,19 @@ class LstmUnit(object):
 
         with tf.variable_scope(scope_name):
             self.W = tf.get_variable('W', [self.input_size+self.hidden_size, 4*self.hidden_size])
-            self.b = tf.get_variable('b', [4*self.hidden_size],
-                                     initializer=tf.zeros_initializer(), dtype=tf.float32)
-        self.params.update({'W':self.W, 'b':self.b})
+            self.b = tf.get_variable('b', [4*self.hidden_size], initializer=tf.zeros_initializer(), dtype=tf.float32)
 
-    def __call__(self, x, s, finished = None):
+        self.params.update({'W': self.W, 'b': self.b})
+
+    def __call__(self, x, s, finished=None):
         h_prev, c_prev = s
 
         x = tf.concat([x, h_prev], 1)
         i, j, f, o = tf.split(tf.nn.xw_plus_b(x, self.W, self.b), 4, 1)
 
         # Final Memory cell
-        # add forget_bias (default: 1) the forget gate in order to reduce the scale of forgetting in the beginning of the training.
+        # NOTE: add bias 1.0 to the forget gate to reduce the scale of forgetting in the beginning of the training.
         c = tf.sigmoid(f+1.0) * c_prev + tf.sigmoid(i) * tf.tanh(j)
-        # c = tf.sigmoid(f) * c_prev + tf.sigmoid(i) * tf.tanh(j)
         h = tf.sigmoid(o) * tf.tanh(c)
 
         out, state = h, (h, c)
@@ -44,8 +43,6 @@ class LstmUnit(object):
             '''
             out = tf.where(finished, tf.zeros_like(h), h)
             state = (tf.where(finished, h_prev, h), tf.where(finished, c_prev, c))
-            # out = tf.multiply(1 - finished, h)
-            # state = (tf.multiply(1 - finished, h) + tf.multiply(finished, h_prev), tf.multiply(1 - finished, c) + tf.multiply(finished, c_prev))
 
         return out, state
 

@@ -57,6 +57,7 @@ class dualAttentionWrapper(object):
         weights = tf.divide(weights * fd_weights, (1e-6 + tf.reduce_sum(weights * fd_weights, axis=0, keepdims=True)))
         
         context = tf.reduce_sum(self.hs * weights, axis=0)  # batch * input_size
+        # NOTE: project context vector and hidden state vector to hidden size, before applying output layer
         out = tf.tanh(tf.nn.xw_plus_b(tf.concat([context, x], -1), self.Wo, self.bo))
 
         if finished is not None:
