@@ -176,7 +176,7 @@ class DataLoader(object):
         batch_data['coverage_labels'].append(coverage_lb)
 
       batch_data_np = {}
-      for k, v in batch_data.iteritems():
+      for k, v in batch_data.items():
         batch_data_np[k] = np.array(v)
 
       yield batch_data_np
