@@ -77,6 +77,7 @@ class DataLoader(object):
 
         length = len(summary_id.strip().split(' '))
 
+        # NOTE filter for training with MAX and MIN summary length
         if filter and (length > MAX or length < MIN):
           continue
         else:
@@ -102,7 +103,7 @@ class DataLoader(object):
   def batch_iter(self, data, batch_size, shuffle=False):
     summary_ids, texts, fields, poses, rposes, summary_tks, coverage_lbs, _ = data
 
-    data_size 	= len(summary_ids)
+    data_size = len(summary_ids)
     print('data_size = %d'%data_size)
     num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
                           else int(data_size / batch_size) + 1

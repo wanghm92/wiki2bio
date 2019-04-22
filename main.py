@@ -59,7 +59,7 @@ tf.app.flags.DEFINE_float("dp", 0, 'dropout rate')
 tf.app.flags.DEFINE_integer("max_length", 100, 'maximum decoding length')
 
 tf.app.flags.DEFINE_float("alpha", 0.9, 'percentage of MLE loss')
-tf.app.flags.DEFINE_float("discount", 0.0, 'discount factor for cummulative rewards, default: not use')
+tf.app.flags.DEFINE_float("discount", 0.0, 'discount factor for cumulative rewards, default: not use')
 tf.app.flags.DEFINE_integer("beam", 1, "width of beam search")
 tf.app.flags.DEFINE_boolean("rl", False, 'whether to add policy gradient')
 tf.app.flags.DEFINE_boolean("neg", False, 'whether to use negative rewards')
@@ -247,26 +247,6 @@ def train(sess, dataloader, model, saver, rl=FLAGS.rl):
 
           start_time = time.time()
 
-
-def bleu_score(labels_file, predictions_path):
-    bleu_script = '%s/onmt-tf-whm/third_party/multi-bleu.perl'%HOME
-    try:
-      with io.open(predictions_path, encoding="utf-8", mode="r") as predictions_file:
-        bleu_out = subprocess.check_output(
-            [bleu_script, labels_file],
-            stdin=predictions_file,
-            stderr=subprocess.STDOUT)
-        bleu_out = bleu_out.decode("utf-8")
-        bleu_score = re.search(r"BLEU = (.+?),", bleu_out).group(1)
-        return float(bleu_score)
-
-    except subprocess.CalledProcessError as error:
-      if error.output is not None:
-        msg = error.output.strip()
-        tf.logging.warning(
-            "{} script returned non-zero exit code: {}".format(bleu_script, msg))
-      return None
-
 def evaluate(sess, dataloader, model):
   L.info('Begin calculating evalutation loss (mle) ...')
   evalset = dataloader.dev_set
@@ -283,6 +263,15 @@ def evaluate(sess, dataloader, model):
     progress_bar(b, num_batches)
 
   return loss / num_batches
+
+def test(sess, dataloader, model, beam_size=FLAGS.beam):
+  print("beam_size={}".format(beam_size))
+  vocab = Vocab()
+  if beam_size > 1:
+    result, _, _ = test_beam(sess, dataloader, model, save_dir, 'test', vocab=vocab, beam_size=beam_size)
+  else:
+    result, _, _ = test_metrics(sess, dataloader, model, save_dir, 'test', vocab)
+  print(result)
 
 def test_metrics(*args):
   return test_both(*args) if FLAGS.rouge else test_bleu(*args)
@@ -480,15 +469,6 @@ def test_beam(sess, dataloader, model, ksave_dir, mode='valid', vocab=None, beam
   nocopy_result = ''.join(nocopy_result)
   return nocopy_result, bleu_unk, 0.0
 
-
-def test(sess, dataloader, model, saver, beam_size=FLAGS.beam):
-  print("beam_size={}".format(beam_size))
-  vocab = Vocab()
-  if beam_size > 1:
-    result, _, _ = test_beam(sess, dataloader, model, save_dir, 'test', vocab=vocab, beam_size=beam_size)
-  else:
-    result, _, _ = test_metrics(sess, dataloader, model, save_dir, 'test', vocab)
-  print(result)
 
 def main():
   config = tf.ConfigProto(allow_soft_placement=True)

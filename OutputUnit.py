@@ -35,7 +35,6 @@ class OutputUnit(object):
             out = tf.multiply(out, self.vocab_mask)
         if finished is not None:
             out = tf.where(finished, tf.zeros_like(out), out)
-            #out = tf.multiply(1 - finished, out)
         return out
 
     def save(self, path):
